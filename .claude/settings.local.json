@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\gitLab\\\\InterfaceWatchDog\\\\InterfaceWatchDog\\\\Properties\\\\PublishProfiles\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"d:\\\\gitLab\\\\InterfaceWatchDog\\\\Installer\\\\Output\")",
+      "PowerShell(winget install JRSoftware.InnoSetup --silent --accept-package-agreements --accept-source-agreements 2>&1)"
+    ]
+  }
+}
