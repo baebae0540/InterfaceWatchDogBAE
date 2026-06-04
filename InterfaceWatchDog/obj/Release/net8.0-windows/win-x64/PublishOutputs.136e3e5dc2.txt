@@ -1,2 +1,0 @@
-D:\gitLab\InterfaceWatchDog\InterfaceWatchDog\bin\publish\win-x64\InterfaceWatchDog.pdb
-D:\gitLab\InterfaceWatchDog\InterfaceWatchDog\bin\publish\win-x64\InterfaceWatchDog.exe

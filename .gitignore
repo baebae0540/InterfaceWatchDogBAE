@@ -1,9 +1,21 @@
+# Visual Studio
 .vs/
+*.user
+*.suo
+
+# Build
 bin/
 obj/
 
-*.user
-*.suo
-*.cache
+# Publish
+publish/
 
-TestResults/
+# Installer Output
+Installer/Output/
+
+# Logs
+logs/
+*.log
+
+# Claude
+.claude/
