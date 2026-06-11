@@ -1,13 +1,13 @@
 ;=============================================================================
 ; InterfaceWatchDog Setup Script
-; 한올바이오파마 인터페이스 감시 시스템 설치 스크립트
+; 인터페이스 감시 시스템 설치 스크립트
 ; Inno Setup 6 필요 (https://jrsoftware.org/isinfo.php)
 ;=============================================================================
 
 #define MyAppName       "InterfaceWatchDog"
 #define MyAppNameKor    "인터페이스 감시 시스템"
 #define MyAppVersion    "1.0.0"
-#define MyAppPublisher  "한올바이오파마"
+#define MyAppPublisher  "InterfaceWatchDog"
 #define MyAppExeName    "InterfaceWatchDog.exe"
 #define MyAppSvcName    "InterfaceWatchDog"
 #define PublishDir      "..\InterfaceWatchDog\bin\publish\win-x64"
@@ -44,7 +44,7 @@ ArchitecturesAllowed=x64compatible
 
 ;-- UI 스타일
 WizardStyle=modern
-SetupIconFile=
+; SetupIconFile=Assets\InterfaceWatchDog.ico  ; TODO: .ico 파일 추가 후 활성화
 
 ;-- 재시작
 RestartIfNeededByRun=no
@@ -63,7 +63,7 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 ;=============================================================================
 [Messages]
 ; 한국어 커스텀 메시지
-BeveledLabel=한올바이오파마
+BeveledLabel=InterfaceWatchDog
 
 ;=============================================================================
 [CustomMessages]
@@ -133,18 +133,17 @@ Root: HKLM64; Subkey: "SOFTWARE\{#MyAppPublisher}\{#MyAppName}"; \
 
 ;=============================================================================
 [Run]
-; 서비스 등록 (서비스 컴포넌트 선택 시)
+; 서비스 컴포넌트 선택 시 --install 실행 (설치 프로그램이 관리자로 실행되므로 UAC 없음)
 Filename: "{app}\{#MyAppExeName}"; \
     Parameters: "--install"; \
     StatusMsg: "{cm:ServiceInstalling}"; \
     Flags: runhidden waituntilterminated; \
     Components: service
 
-; 설치 완료 후 실행 (앱 전용 모드: 트레이 실행)
+; 설치 완료 후 앱 실행 (선택) — 서비스 미사용 시 트레이 앱으로 바로 시작
 Filename: "{app}\{#MyAppExeName}"; \
     Description: "{cm:LaunchAfterInstall}"; \
-    Flags: nowait postinstall skipifsilent unchecked; \
-    Components: not service
+    Flags: nowait postinstall skipifsilent unchecked
 
 ;=============================================================================
 [UninstallRun]
@@ -209,8 +208,9 @@ begin
       NL := Chr(13) + Chr(10);
       Msg :=
         '설치가 완료되었습니다.' + NL + NL +
-        '[Windows 서비스 등록 완료]' + NL +
-        '  서버 재시작 후에도 자동으로 감시를 시작합니다.' + NL + NL +
+        '[Windows 서비스 등록]' + NL +
+        '  서비스 등록을 시도했습니다. 서비스 관리자에서 확인하세요.' + NL +
+        '  (services.msc → InterfaceWatchDog)' + NL + NL +
         '[최초 설정 필요]' + NL +
         '  프로그램을 실행하여 프로세스명, 실행 경로,' + NL +
         '  PDF 폴더 경로를 설정해 주세요.' + NL + NL +

@@ -24,8 +24,20 @@ public class WatchDogWindowsService : ServiceBase
     {
         try
         {
-            var config = ConfigManager.Load();
             _log = new LogWriter();
+
+            if (ConfigManager.IsFirstRun())
+            {
+                _log.Warn(SvcName, "config.json 없음 — 앱을 실행하여 설정을 완료한 뒤 서비스를 재시작하세요.");
+                System.Diagnostics.EventLog.WriteEntry(SvcName,
+                    "설정 파일(config.json)이 없습니다. 앱을 실행하여 설정 후 서비스를 재시작하세요.",
+                    System.Diagnostics.EventLogEntryType.Warning);
+                // 서비스는 Running 상태로 유지하되 감시는 시작하지 않음
+                // 설정 후 서비스 재시작으로 감시 시작
+                return;
+            }
+
+            var config = ConfigManager.Load();
             _engine = new WatchDogEngine(config, _log);
             _engine.Start();
         }

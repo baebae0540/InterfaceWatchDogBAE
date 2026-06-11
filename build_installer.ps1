@@ -18,12 +18,23 @@
     .\build_installer.ps1 -SkipPublish
 #>
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [switch]$SkipPublish
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# Version을 지정하지 않으면 .csproj에서 자동 감지
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $csprojPath = Join-Path $PSScriptRoot "InterfaceWatchDog\InterfaceWatchDog.csproj"
+    $xml = [xml](Get-Content $csprojPath -Raw)
+    $Version = $xml.Project.PropertyGroup.Version
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        Write-Host "[경고] .csproj에 <Version> 태그가 없습니다. 기본값 1.0.0 사용." -ForegroundColor Yellow
+        $Version = "1.0.0"
+    }
+}
 
 $Root       = $PSScriptRoot
 $ProjectDir = Join-Path $Root "InterfaceWatchDog"
@@ -93,7 +104,7 @@ $isccCandidates = @(
 )
 $cmdIscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
 if ($cmdIscc) { $isccCandidates += $cmdIscc.Source }
-$isccPaths = $isccCandidates | Where-Object { $_ -and (Test-Path $_) }
+$isccPaths = @($isccCandidates | Where-Object { $_ -and (Test-Path $_) })
 
 if ($isccPaths.Count -eq 0) {
     Write-Host ""

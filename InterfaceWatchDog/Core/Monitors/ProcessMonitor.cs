@@ -3,7 +3,7 @@ using InterfaceWatchDog.Core.Models;
 
 namespace InterfaceWatchDog.Core.Monitors;
 
-public class ProcessMonitor
+public class ProcessMonitor : IProcessMonitor
 {
     public bool IsRunning(string processName)
     {

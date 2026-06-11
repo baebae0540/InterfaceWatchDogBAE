@@ -72,9 +72,9 @@ public class TrayApplicationContext : ApplicationContext
 
     private void OnProgramStatusChanged(ProgramStatus status)
     {
-        // 두 프로그램 중 가장 나쁜 상태를 트레이 아이콘에 반영
+        // 두 프로그램 중 가장 나쁜 상태를 트레이 아이콘에 반영 (감시 안 함은 제외)
         var (erweka, tab, _) = _engine.GetCurrentStatus();
-        _worstStatus = (HealthStatus)Math.Max((int)erweka.Status, (int)tab.Status);
+        _worstStatus = Severity(erweka.Status) >= Severity(tab.Status) ? erweka.Status : tab.Status;
 
         if (_disposed) return;
 
@@ -101,7 +101,21 @@ public class TrayApplicationContext : ApplicationContext
         HealthStatus.Warning => "경고",
         HealthStatus.Restarting => "재시작 중",
         HealthStatus.Failed => "복구 실패",
+        HealthStatus.Disabled => "감시 안함",
         _ => "감시 중"
+    };
+
+    // 상태 비교 우선순위 — Disabled(감시 안 함)는 가장 낮은 우선순위로 취급해
+    // 다른 프로그램의 실제 경고/실패 상태를 가리지 않도록 한다
+    private static int Severity(HealthStatus status) => status switch
+    {
+        HealthStatus.Failed => 5,
+        HealthStatus.Restarting => 4,
+        HealthStatus.Warning => 3,
+        HealthStatus.Healthy => 2,
+        HealthStatus.Unknown => 1,
+        HealthStatus.Disabled => 0,
+        _ => 0
     };
 
     private void ShowStatusForm()
@@ -133,16 +147,8 @@ public class TrayApplicationContext : ApplicationContext
 
         if (result != DialogResult.Yes) return;
 
-        try
-        {
-            Service.WatchDogWindowsService.Install();
-            MessageBox.Show("서비스 등록이 완료되었습니다.", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"서비스 등록 실패: {ex.Message}\n(관리자 권한으로 실행하세요)",
-                "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        // 서비스 등록은 관리자 권한 필요 → UAC 요청하여 재실행
+        RunElevated("--install", "서비스 등록이 완료되었습니다.", "서비스 등록 완료");
     }
 
     private static void UninstallService()
@@ -153,14 +159,31 @@ public class TrayApplicationContext : ApplicationContext
 
         if (result != DialogResult.Yes) return;
 
+        RunElevated("--uninstall", "서비스가 해제되었습니다.", "서비스 해제 완료");
+    }
+
+    private static void RunElevated(string args, string successMsg, string successTitle)
+    {
         try
         {
-            Service.WatchDogWindowsService.Uninstall();
-            MessageBox.Show("서비스가 해제되었습니다.", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Application.ExecutablePath,
+                Arguments = args,
+                Verb = "runas",          // UAC 관리자 권한 요청
+                UseShellExecute = true
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            p?.WaitForExit(10000);
+            MessageBox.Show(successMsg, successTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // 사용자가 UAC 취소
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"서비스 해제 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
