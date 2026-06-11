@@ -17,5 +17,15 @@ Installer/Output/
 logs/
 *.log
 
+# Visual Studio cache
+.vscode/
+
+# NuGet
+packages/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
 # Claude
 .claude/

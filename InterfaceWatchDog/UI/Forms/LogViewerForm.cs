@@ -6,85 +6,121 @@ namespace InterfaceWatchDog.UI.Forms;
 public class LogViewerForm : Form
 {
     private readonly LogWriter _log;
-    private ComboBox _dateCombo = null!;
-    private ListView _logList = null!;
+    private ComboBox  _dateCombo = null!;
+    private ListView  _logList   = null!;
 
     public LogViewerForm(LogWriter log)
     {
         _log = log;
+        AutoScaleMode = AutoScaleMode.Dpi;
         InitializeComponent();
         LoadDates();
     }
 
     private void InitializeComponent()
     {
-        Text = "InterfaceWatchDog - 로그 뷰어";
-        Size = new Size(860, 560);
+        Text          = "InterfaceWatchDog — 로그 뷰어";
+        Size          = new Size(1000, 652);
+        MinimumSize   = new Size(800, 492);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("맑은 고딕", 9f);
+        Font          = new Font("맑은 고딕", 9.5f);
+        BackColor     = Color.FromArgb(245, 246, 250);
 
-        var toolPanel = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(8, 6, 8, 0) };
+        // ── 툴바 (FlowLayoutPanel으로 절대좌표 제거) ─────────────────────────
+        var toolbar = new Panel
+        {
+            Dock      = DockStyle.Top,
+            Height    = 64,                                // 높이 확대 (날짜/버튼 잘림 방지)
+            BackColor = Color.White,
+            Padding   = new Padding(14, 12, 14, 12)
+        };
+        var toolDivider = new Panel
+        {
+            Dock      = DockStyle.Bottom,
+            Height    = 1,
+            BackColor = Color.FromArgb(215, 218, 228)
+        };
 
-        var dateLbl = new Label { Text = "날짜:", Location = new Point(8, 12), AutoSize = true };
+        var flow = new FlowLayoutPanel
+        {
+            Dock          = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents  = false,
+            AutoSize      = false
+        };
+
+        var dateLbl = new Label
+        {
+            Text      = "날짜:",
+            AutoSize  = true,
+            Font      = new Font("맑은 고딕", 9.5f),
+            ForeColor = Color.FromArgb(50, 56, 76),
+            Margin    = new Padding(0, 9, 8, 0)
+        };
+
         _dateCombo = new ComboBox
         {
-            Location = new Point(44, 8),
-            Size = new Size(140, 24),
-            DropDownStyle = ComboBoxStyle.DropDownList
+            Width         = 170,
+            Height        = 32,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font          = new Font("맑은 고딕", 9.5f),
+            Margin        = new Padding(0, 4, 12, 0)
         };
         _dateCombo.SelectedIndexChanged += (_, _) => LoadLogs();
 
-        var btnRefresh = new Button
-        {
-            Text = "새로고침",
-            Location = new Point(196, 7),
-            Size = new Size(80, 28),
-            FlatStyle = FlatStyle.Flat
-        };
+        var btnRefresh = ToolBtn("새로고침");
         btnRefresh.Click += (_, _) => { LoadDates(); LoadLogs(); };
 
-        var btnOpenFolder = new Button
-        {
-            Text = "폴더 열기",
-            Location = new Point(284, 7),
-            Size = new Size(80, 28),
-            FlatStyle = FlatStyle.Flat
-        };
-        btnOpenFolder.Click += (_, _) =>
+        var btnFolder = ToolBtn("폴더 열기");
+        btnFolder.Click += (_, _) =>
         {
             if (Directory.Exists(LogWriter.LogDirectoryPath))
                 System.Diagnostics.Process.Start("explorer.exe", LogWriter.LogDirectoryPath);
         };
 
-        toolPanel.Controls.AddRange([dateLbl, _dateCombo, btnRefresh, btnOpenFolder]);
+        flow.Controls.AddRange([dateLbl, _dateCombo, btnRefresh, btnFolder]);
+        toolbar.Controls.AddRange([toolDivider, flow]);
 
+        // ── 로그 목록 ─────────────────────────────────────────────────────────
         _logList = new ListView
         {
-            Dock = DockStyle.Fill,
-            View = View.Details,
-            FullRowSelect = true,
-            GridLines = false,
-            Font = new Font("Consolas", 8.5f),
-            BackColor = Color.FromArgb(30, 30, 30),
-            ForeColor = Color.FromArgb(200, 200, 200),
+            Dock        = DockStyle.Fill,
+            View        = View.Details,
+            FullRowSelect  = true,
+            GridLines      = false,
+            HeaderStyle    = ColumnHeaderStyle.Nonclickable,
+            Font        = new Font("Consolas", 9f),
+            BackColor   = Color.FromArgb(22, 24, 30),
+            ForeColor   = Color.FromArgb(195, 200, 215),
             BorderStyle = BorderStyle.None
         };
-        _logList.Columns.Add("시간", 130);
-        _logList.Columns.Add("레벨", 60);
-        _logList.Columns.Add("소스", 160);
-        _logList.Columns.Add("메시지", 460);
+        _logList.Columns.Add("시간",   140);
+        _logList.Columns.Add("레벨",    62);
+        _logList.Columns.Add("소스",   170);
+        _logList.Columns.Add("메시지", 580);
 
         Controls.Add(_logList);
-        Controls.Add(toolPanel);
+        Controls.Add(toolbar);
     }
+
+    private static Button ToolBtn(string text) => new()
+    {
+        Text      = text,
+        Size      = new Size(100, 32),
+        FlatStyle = FlatStyle.Flat,
+        Font      = new Font("맑은 고딕", 9f),
+        BackColor = Color.FromArgb(232, 235, 242),
+        ForeColor = Color.FromArgb(46, 52, 72),
+        Cursor    = Cursors.Hand,
+        Margin    = new Padding(8, 4, 0, 0)
+    };
 
     private void LoadDates()
     {
         var selected = _dateCombo.SelectedItem?.ToString();
         _dateCombo.Items.Clear();
 
-        var dates = _log.GetAvailableLogDates();
-        foreach (var d in dates)
+        foreach (var d in _log.GetAvailableLogDates())
             _dateCombo.Items.Add(d);
 
         if (_dateCombo.Items.Count > 0)
@@ -101,9 +137,7 @@ public class LogViewerForm : Form
         var date = _dateCombo.SelectedItem?.ToString();
         if (string.IsNullOrEmpty(date)) return;
 
-        var entries = _log.ReadLogsByDate(date);
-
-        foreach (var entry in entries)
+        foreach (var entry in _log.ReadLogsByDate(date))
         {
             var item = new ListViewItem(entry.Timestamp.ToString("HH:mm:ss.fff"));
             item.SubItems.Add(entry.LevelText);

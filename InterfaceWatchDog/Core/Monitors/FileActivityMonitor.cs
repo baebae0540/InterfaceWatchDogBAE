@@ -2,7 +2,7 @@ using InterfaceWatchDog.Core.Models;
 
 namespace InterfaceWatchDog.Core.Monitors;
 
-public class FileActivityMonitor
+public class FileActivityMonitor : IFileActivityMonitor
 {
     public FileActivityStatus Check(PdfFolderConfig config)
     {

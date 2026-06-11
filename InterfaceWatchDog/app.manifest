@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- 서비스 등록/해제는 관리자 권한 필요. 일반 감시 기능은 일반 사용자 권한으로도 동작 -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- 일반 실행은 사용자 권한으로 동작. 서비스 등록/해제 시 코드에서 UAC 요청 -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

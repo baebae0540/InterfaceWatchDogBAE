@@ -6,7 +6,8 @@ public enum HealthStatus
     Healthy,
     Warning,
     Restarting,
-    Failed
+    Failed,
+    Disabled
 }
 
 public class ProgramStatus
@@ -27,6 +28,7 @@ public class ProgramStatus
         HealthStatus.Warning => "경고",
         HealthStatus.Restarting => "재시작 중",
         HealthStatus.Failed => "복구 실패",
+        HealthStatus.Disabled => "감시 안함",
         _ => "확인 중"
     };
 
@@ -36,6 +38,7 @@ public class ProgramStatus
         HealthStatus.Warning => Color.FromArgb(255, 152, 0),
         HealthStatus.Restarting => Color.FromArgb(33, 150, 243),
         HealthStatus.Failed => Color.FromArgb(244, 67, 54),
+        HealthStatus.Disabled => Color.FromArgb(189, 193, 204),
         _ => Color.FromArgb(158, 158, 158)
     };
 }

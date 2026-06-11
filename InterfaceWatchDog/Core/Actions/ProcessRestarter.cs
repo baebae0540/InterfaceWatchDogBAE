@@ -3,7 +3,7 @@ using InterfaceWatchDog.Core.Models;
 
 namespace InterfaceWatchDog.Core.Actions;
 
-public class ProcessRestarter
+public class ProcessRestarter : IProcessRestarter
 {
     public RestartResult TryRestart(ProgramConfig config)
     {
@@ -21,7 +21,10 @@ public class ProcessRestarter
             {
                 FileName = config.ExecutablePath,
                 Arguments = config.Arguments,
-                UseShellExecute = true,
+                // UseShellExecute = false: CreateProcess 직접 호출
+                // → 관리자/서비스 컨텍스트에서 740(ERROR_ELEVATION_REQUIRED) 방지
+                UseShellExecute = false,
+                CreateNoWindow = false,
                 WorkingDirectory = Path.GetDirectoryName(config.ExecutablePath) ?? ""
             };
 
