@@ -11,18 +11,18 @@ public class SettingsForm : Form
     private TextBox       _erwekaExePath     = null!;
     private TextBox       _erwekaArguments   = null!;
     private NumericUpDown _erwekaMaxRetry    = null!;
+    private NumericUpDown _erwekaCheckSec    = null!;
 
     private TextBox       _tabProcessName = null!;
     private TextBox       _tabExePath     = null!;
     private TextBox       _tabArguments   = null!;
     private NumericUpDown _tabMaxRetry    = null!;
+    private NumericUpDown _tabCheckSec    = null!;
 
     private TextBox       _pdfFolder     = null!;
     private NumericUpDown _pdfMaxIdle    = null!;
     private NumericUpDown _pdfMaxBacklog = null!;
-
-    private NumericUpDown _processCheckSec = null!;
-    private NumericUpDown _fileCheckMin    = null!;
+    private NumericUpDown _pdfCheckMin   = null!;
 
     public SettingsForm(AppConfig config)
     {
@@ -67,7 +67,8 @@ public class SettingsForm : Form
         {
             Text = "취소", Size = new Size(100, 36),
             BackColor = Color.FromArgb(228, 231, 238), ForeColor = Color.FromArgb(50, 55, 70),
-            FlatStyle = FlatStyle.Flat, Font = new Font("맑은 고딕", 10f), Cursor = Cursors.Hand
+            FlatStyle = FlatStyle.Flat, Font = new Font("맑은 고딕", 10f), Cursor = Cursors.Hand,
+            CausesValidation = false
         };
         btnCancel.FlatAppearance.BorderColor = Color.FromArgb(195, 200, 215);
         btnCancel.Click += (_, _) => Close();
@@ -79,44 +80,39 @@ public class SettingsForm : Form
         // ── TabControl ───────────────────────────────────────────────────────
         var tabs = new TabControl { Dock = DockStyle.Fill, Font = new Font("맑은 고딕", 9.5f), Padding = new Point(16, 6) };
 
-        // 탭 1: ERWEKA — rows: text(0-1) + browse(2-3) + text(4-5) + num(6)
+        // 탭 1: ERWEKA — rows: text(0-1) + browse(2-3) + text(4-5) + num(6) + num(7)
         var (pg1, tbl1) = MakeTab("① ERWEKA Export Manager");
-        AddRowStyles(tbl1, 42, 28, 42, 28, 42, 28, 52);
+        AddRowStyles(tbl1, 42, 28, 42, 28, 42, 28, 52, 52);
         tbl1.SuspendLayout();
         _erwekaProcessName = AddTextAt(tbl1, 0, "프로세스 이름",   "확장자(.exe) 없이 입력   예) ExportManager   (비워두면 ERWEKA 감시를 사용하지 않음)");
         _erwekaExePath     = AddBrowseAt(tbl1, 2, "실행 파일 경로",  "미입력 시 감시만 수행 (재시작 불가)", isExe: true,  autoFill: _erwekaProcessName);
-        _erwekaArguments   = AddTextAt(tbl1, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수 --port 9000 --config \"C:\\config\\tab.ini\"");
+        _erwekaArguments   = AddTextAt(tbl1, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수");
         _erwekaMaxRetry    = AddNumAt(tbl1, 6, "최대 재시작 횟수",  1, 10, "회");
+        _erwekaCheckSec    = AddNumAt(tbl1, 7, "프로세스 체크 주기", 10, 300, "초");
         tbl1.ResumeLayout(true);
 
         // 탭 2: TabmachineIF — 동일 구조
         var (pg2, tbl2) = MakeTab("② TabmachineIF");
-        AddRowStyles(tbl2, 42, 28, 42, 28, 42, 28, 52);
+        AddRowStyles(tbl2, 42, 28, 42, 28, 42, 28, 52, 52);
         tbl2.SuspendLayout();
         _tabProcessName = AddTextAt(tbl2, 0, "프로세스 이름 *",   "확장자(.exe) 없이 입력   예) TabmachineIF");
         _tabExePath     = AddBrowseAt(tbl2, 2, "실행 파일 경로 *", "재시작에 사용할 실행 파일 경로",         isExe: true, autoFill: _tabProcessName);
-        _tabArguments   = AddTextAt(tbl2, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수 --port 9000 --config \"C:\\config\\tab.ini\"");
+        _tabArguments   = AddTextAt(tbl2, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수");
         _tabMaxRetry    = AddNumAt(tbl2, 6, "최대 재시작 횟수",  1, 10, "회");
+        _tabCheckSec    = AddNumAt(tbl2, 7, "프로세스 체크 주기", 10, 300, "초");
         tbl2.ResumeLayout(true);
 
-        // 탭 3: PDF 폴더 — browse(0-1) + num(2) + num(3)
+        // 탭 3: PDF 폴더 — browse(0-1) + num(2) + num(3) + num(4)
         var (pg3, tbl3) = MakeTab("③ PDF 폴더 감시");
-        AddRowStyles(tbl3, 42, 28, 52, 52);
+        AddRowStyles(tbl3, 42, 28, 52, 52, 52);
         tbl3.SuspendLayout();
         _pdfFolder     = AddBrowseAt(tbl3, 0, "PDF 폴더 경로",       "ERWEKA가 PDF를 저장하는 폴더   (비워두면 PDF 폴더 감시를 사용하지 않음)", isExe: false, autoFill: null);
         _pdfMaxIdle    = AddNumAt(tbl3, 2, "신규 파일 없음 경고 기준", 1, 1440, "분");
         _pdfMaxBacklog = AddNumAt(tbl3, 3, "누적 파일 수 경고 기준",   1, 9999, "개");
+        _pdfCheckMin   = AddNumAt(tbl3, 4, "파일 활동 체크 주기",    1,  60, "분");
         tbl3.ResumeLayout(true);
 
-        // 탭 4: 감시 주기 — num(0) + num(1)
-        var (pg4, tbl4) = MakeTab("④ 감시 주기");
-        AddRowStyles(tbl4, 52, 52);
-        tbl4.SuspendLayout();
-        _processCheckSec = AddNumAt(tbl4, 0, "프로세스 체크 주기",    10, 300, "초");
-        _fileCheckMin    = AddNumAt(tbl4, 1, "파일 활동 체크 주기",    1,  60, "분");
-        tbl4.ResumeLayout(true);
-
-        tabs.TabPages.AddRange([pg1, pg2, pg3, pg4]);
+        tabs.TabPages.AddRange([pg1, pg2, pg3]);
         Controls.Add(tabs);
         Controls.Add(btnBar);
     }
@@ -257,6 +253,21 @@ public class SettingsForm : Form
             Width   = 110,
             Dock    = DockStyle.Left
         };
+
+        // 포커스 이동(저장 버튼 클릭 등) 시 NumericUpDown이 조용히 값을 보정하기 전에
+        // 사용자가 입력한 원본 텍스트를 직접 검사해 범위를 벗어나면 알리고 입력을 막는다
+        num.Validating += (_, e) =>
+        {
+            if (decimal.TryParse(num.Text, out var typed) && (typed < num.Minimum || typed > num.Maximum))
+            {
+                MessageBox.Show(
+                    $"{label}은(는) {num.Minimum}~{num.Maximum}{suffix} 범위로 입력해야 합니다.",
+                    "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                e.Cancel = true;
+                num.Select(0, num.Text.Length);
+            }
+        };
+
         numPanel.Controls.Add(num);
         grid.Controls.Add(numPanel, 1, row);
 
@@ -305,18 +316,18 @@ public class SettingsForm : Form
         _erwekaExePath.Text      = _config.Erweka.ExecutablePath;
         _erwekaArguments.Text    = _config.Erweka.Arguments;
         _erwekaMaxRetry.Value    = Math.Clamp(_config.Erweka.MaxRestartAttempts, 1, 10);
+        _erwekaCheckSec.Value    = Math.Clamp(_config.Erweka.ProcessCheckSeconds, 10, 300);
 
         _tabProcessName.Text     = _config.TabmachineIF.ProcessName;
         _tabExePath.Text         = _config.TabmachineIF.ExecutablePath;
         _tabArguments.Text       = _config.TabmachineIF.Arguments;
         _tabMaxRetry.Value       = Math.Clamp(_config.TabmachineIF.MaxRestartAttempts, 1, 10);
+        _tabCheckSec.Value       = Math.Clamp(_config.TabmachineIF.ProcessCheckSeconds, 10, 300);
 
         _pdfFolder.Text          = _config.PdfFolder.Path;
         _pdfMaxIdle.Value        = Math.Clamp(_config.PdfFolder.MaxIdleMinutes, 1, 1440);
         _pdfMaxBacklog.Value     = Math.Clamp(_config.PdfFolder.MaxBacklogCount, 1, 9999);
-
-        _processCheckSec.Value   = Math.Clamp(_config.Intervals.ProcessCheckSeconds, 10, 300);
-        _fileCheckMin.Value      = Math.Clamp(_config.Intervals.FileActivityCheckMinutes, 1, 60);
+        _pdfCheckMin.Value       = Math.Clamp(_config.PdfFolder.FileActivityCheckMinutes, 1, 60);
     }
 
     private void BtnSave_Click(object? sender, EventArgs e)
@@ -328,22 +339,22 @@ public class SettingsForm : Form
             return;
         }
 
-        _config.Erweka.ProcessName        = _erwekaProcessName.Text.Trim();
-        _config.Erweka.ExecutablePath     = _erwekaExePath.Text.Trim();
-        _config.Erweka.Arguments          = _erwekaArguments.Text.Trim();
-        _config.Erweka.MaxRestartAttempts = (int)_erwekaMaxRetry.Value;
+        _config.Erweka.ProcessName          = _erwekaProcessName.Text.Trim();
+        _config.Erweka.ExecutablePath       = _erwekaExePath.Text.Trim();
+        _config.Erweka.Arguments            = _erwekaArguments.Text.Trim();
+        _config.Erweka.MaxRestartAttempts   = (int)_erwekaMaxRetry.Value;
+        _config.Erweka.ProcessCheckSeconds  = (int)_erwekaCheckSec.Value;
 
-        _config.TabmachineIF.ProcessName        = _tabProcessName.Text.Trim();
-        _config.TabmachineIF.ExecutablePath     = _tabExePath.Text.Trim();
-        _config.TabmachineIF.Arguments          = _tabArguments.Text.Trim();
-        _config.TabmachineIF.MaxRestartAttempts = (int)_tabMaxRetry.Value;
+        _config.TabmachineIF.ProcessName          = _tabProcessName.Text.Trim();
+        _config.TabmachineIF.ExecutablePath       = _tabExePath.Text.Trim();
+        _config.TabmachineIF.Arguments            = _tabArguments.Text.Trim();
+        _config.TabmachineIF.MaxRestartAttempts   = (int)_tabMaxRetry.Value;
+        _config.TabmachineIF.ProcessCheckSeconds  = (int)_tabCheckSec.Value;
 
-        _config.PdfFolder.Path            = _pdfFolder.Text.Trim();
-        _config.PdfFolder.MaxIdleMinutes  = (int)_pdfMaxIdle.Value;
-        _config.PdfFolder.MaxBacklogCount = (int)_pdfMaxBacklog.Value;
-
-        _config.Intervals.ProcessCheckSeconds      = (int)_processCheckSec.Value;
-        _config.Intervals.FileActivityCheckMinutes = (int)_fileCheckMin.Value;
+        _config.PdfFolder.Path                    = _pdfFolder.Text.Trim();
+        _config.PdfFolder.MaxIdleMinutes          = (int)_pdfMaxIdle.Value;
+        _config.PdfFolder.MaxBacklogCount         = (int)_pdfMaxBacklog.Value;
+        _config.PdfFolder.FileActivityCheckMinutes = (int)_pdfCheckMin.Value;
 
         ConfigManager.Save(_config);
         DialogResult = DialogResult.OK;

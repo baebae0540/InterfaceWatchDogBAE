@@ -12,7 +12,8 @@ public class WatchDogEngine : IDisposable
     private readonly IProcessRestarter _restarter;
     private readonly IFileActivityMonitor _fileMonitor;
 
-    private System.Threading.Timer? _processTimer;
+    private System.Threading.Timer? _erwekaTimer;
+    private System.Threading.Timer? _tabmachineTimer;
     private System.Threading.Timer? _fileTimer;
 
     private readonly Dictionary<string, RestartTracker> _trackers = new()
@@ -48,19 +49,20 @@ public class WatchDogEngine : IDisposable
     {
         _log.Info("Engine", "WatchDog 감시 시작");
 
-        var processInterval = TimeSpan.FromSeconds(_config.Intervals.ProcessCheckSeconds);
-        var fileInterval    = TimeSpan.FromMinutes(_config.Intervals.FileActivityCheckMinutes);
+        _erwekaTimer = new System.Threading.Timer(_ => CheckErweka(), null,
+            TimeSpan.Zero, TimeSpan.FromSeconds(_config.Erweka.ProcessCheckSeconds));
 
-        _processTimer = new System.Threading.Timer(_ => CheckProcesses(), null,
-            TimeSpan.Zero, processInterval);
+        _tabmachineTimer = new System.Threading.Timer(_ => CheckTabmachine(), null,
+            TimeSpan.Zero, TimeSpan.FromSeconds(_config.TabmachineIF.ProcessCheckSeconds));
 
         _fileTimer = new System.Threading.Timer(_ => CheckFileActivity(), null,
-            TimeSpan.FromSeconds(10), fileInterval);
+            TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(_config.PdfFolder.FileActivityCheckMinutes));
     }
 
     public void Stop()
     {
-        _processTimer?.Dispose();
+        _erwekaTimer?.Dispose();
+        _tabmachineTimer?.Dispose();
         _fileTimer?.Dispose();
         _log.Info("Engine", "WatchDog 감시 중지");
     }
@@ -70,6 +72,16 @@ public class WatchDogEngine : IDisposable
         _config = config;
         _erwekaStatus.DisplayName    = config.Erweka.DisplayName;
         _tabmachineStatus.DisplayName = config.TabmachineIF.DisplayName;
+
+        // 감시 주기 변경을 실행 중인 타이머에도 즉시 반영
+        // (변경 전에는 _config만 갱신되고 타이머는 Start() 시점 주기로 계속 동작하던 버그)
+        var erwekaInterval = TimeSpan.FromSeconds(config.Erweka.ProcessCheckSeconds);
+        var tabInterval    = TimeSpan.FromSeconds(config.TabmachineIF.ProcessCheckSeconds);
+        var fileInterval   = TimeSpan.FromMinutes(config.PdfFolder.FileActivityCheckMinutes);
+
+        _erwekaTimer?.Change(erwekaInterval, erwekaInterval);
+        _tabmachineTimer?.Change(tabInterval, tabInterval);
+        _fileTimer?.Change(fileInterval, fileInterval);
     }
 
     public (ProgramStatus erweka, ProgramStatus tabmachine, FileActivityStatus file) GetCurrentStatus()
@@ -77,12 +89,19 @@ public class WatchDogEngine : IDisposable
 
     // ─── 프로세스 감시 ────────────────────────────────────────────────────────
 
-    // internal: 타이머 콜백 + 테스트에서 직접 호출 가능
+    // internal: 두 프로그램 일괄 점검 (테스트에서 직접 호출 가능)
     internal void CheckProcesses()
     {
-        CheckProgram("Erweka",       _config.Erweka,       ref _erwekaStatus);
-        CheckProgram("TabmachineIF", _config.TabmachineIF, ref _tabmachineStatus);
+        CheckErweka();
+        CheckTabmachine();
     }
+
+    // internal: 타이머 콜백 (각 프로그램별 독립 주기)
+    internal void CheckErweka()
+        => CheckProgram("Erweka", _config.Erweka, ref _erwekaStatus);
+
+    internal void CheckTabmachine()
+        => CheckProgram("TabmachineIF", _config.TabmachineIF, ref _tabmachineStatus);
 
     private void CheckProgram(string key, ProgramConfig cfg, ref ProgramStatus status)
     {
@@ -122,19 +141,23 @@ public class WatchDogEngine : IDisposable
 
         tracker.IncrementFailure();
 
-        if (tracker.ConsecutiveFailures >= cfg.MaxRestartAttempts)
+        // 최대 재시도 횟수를 넘기면 Failed로 표시하되, 재시작 시도 자체는 쿨다운마다 계속 반복한다
+        // (이전에는 여기서 영구적으로 포기하고 매 체크마다 ERROR만 반복 기록했음)
+        var isFailed = tracker.ConsecutiveFailures >= cfg.MaxRestartAttempts;
+        if (isFailed)
         {
-            UpdateStatus(ref status, HealthStatus.Failed,
-                $"재시작 {cfg.MaxRestartAttempts}회 실패 — 수동 확인 필요");
             _log.Error(cfg.DisplayName,
-                $"재시작 {cfg.MaxRestartAttempts}회 연속 실패. 수동 개입 필요.");
-            return;
+                $"재시작 {cfg.MaxRestartAttempts}회 연속 실패 — 수동 확인 필요. {cfg.RestartCooldownSeconds}초 후 재시도합니다.");
+            UpdateStatus(ref status, HealthStatus.Failed,
+                $"재시작 {tracker.ConsecutiveFailures}회 실패 — 수동 확인 필요 (재시도 대기 중)");
         }
-
-        _log.Warn(cfg.DisplayName,
-            $"프로세스 미감지 — 재시작 시도 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
-        UpdateStatus(ref status, HealthStatus.Restarting,
-            $"재시작 시도 중 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
+        else
+        {
+            _log.Warn(cfg.DisplayName,
+                $"프로세스 미감지 — 재시작 시도 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
+            UpdateStatus(ref status, HealthStatus.Restarting,
+                $"재시작 시도 중 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
+        }
 
         var result = _restarter.TryRestart(cfg);
         tracker.SetCooldown(cfg.RestartCooldownSeconds);  // 설정값 적용 (기존 하드코딩 버그 수정)
@@ -150,7 +173,8 @@ public class WatchDogEngine : IDisposable
         else
         {
             _log.Error(cfg.DisplayName, $"재시작 실패: {result.Message}");
-            UpdateStatus(ref status, HealthStatus.Warning, $"재시작 실패: {result.Message}");
+            UpdateStatus(ref status, isFailed ? HealthStatus.Failed : HealthStatus.Warning,
+                $"재시작 실패: {result.Message}");
         }
     }
 

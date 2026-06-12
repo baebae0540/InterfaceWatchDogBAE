@@ -28,16 +28,15 @@ public class ConfigManagerIntegrationTests : IDisposable
             {
                 DisplayName = "통합테스트ERWEKA", ProcessName = "erweka_proc",
                 ExecutablePath = @"C:\test\erweka.exe", Arguments = "-x",
-                MaxRestartAttempts = 5, RestartCooldownSeconds = 45
+                MaxRestartAttempts = 5, RestartCooldownSeconds = 45, ProcessCheckSeconds = 10
             },
             TabmachineIF = new ProgramConfig
             {
                 DisplayName = "통합테스트Tab", ProcessName = "tab_proc",
                 ExecutablePath = @"C:\test\tab.exe",
-                MaxRestartAttempts = 2, RestartCooldownSeconds = 20
+                MaxRestartAttempts = 2, RestartCooldownSeconds = 20, ProcessCheckSeconds = 15
             },
-            PdfFolder = new PdfFolderConfig { Path = @"C:\pdf", MaxIdleMinutes = 15, MaxBacklogCount = 20 },
-            Intervals = new IntervalConfig { ProcessCheckSeconds = 10, FileActivityCheckMinutes = 3 }
+            PdfFolder = new PdfFolderConfig { Path = @"C:\pdf", MaxIdleMinutes = 15, MaxBacklogCount = 20, FileActivityCheckMinutes = 3 }
         };
 
         ConfigManager.Save(config);

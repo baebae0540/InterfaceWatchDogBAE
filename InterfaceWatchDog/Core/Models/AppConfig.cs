@@ -25,7 +25,6 @@ public class AppConfig
     };
 
     public PdfFolderConfig PdfFolder { get; set; } = new();
-    public IntervalConfig Intervals { get; set; } = new();
 }
 
 public class ProgramConfig
@@ -36,6 +35,7 @@ public class ProgramConfig
     public string Arguments { get; set; } = "";
     public int MaxRestartAttempts { get; set; } = 3;
     public int RestartCooldownSeconds { get; set; } = 60;
+    public int ProcessCheckSeconds { get; set; } = 30;
 
     [JsonIgnore]
     public bool CanRestart => !string.IsNullOrWhiteSpace(ExecutablePath) &&
@@ -47,13 +47,8 @@ public class PdfFolderConfig
     public string Path { get; set; } = "";
     public int MaxIdleMinutes { get; set; } = 30;
     public int MaxBacklogCount { get; set; } = 50;
+    public int FileActivityCheckMinutes { get; set; } = 5;
 
     [JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Path) && Directory.Exists(Path);
-}
-
-public class IntervalConfig
-{
-    public int ProcessCheckSeconds { get; set; } = 30;
-    public int FileActivityCheckMinutes { get; set; } = 5;
 }

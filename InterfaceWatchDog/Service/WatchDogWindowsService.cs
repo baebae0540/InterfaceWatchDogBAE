@@ -11,6 +11,8 @@ public class WatchDogWindowsService : ServiceBase
 
     private WatchDogEngine? _engine;
     private LogWriter? _log;
+    private FileSystemWatcher? _configWatcher;
+    private DateTime _lastConfigWriteUtc;
 
     public WatchDogWindowsService()
     {
@@ -40,6 +42,8 @@ public class WatchDogWindowsService : ServiceBase
             var config = ConfigManager.Load();
             _engine = new WatchDogEngine(config, _log);
             _engine.Start();
+
+            StartConfigWatcher();
         }
         catch (Exception ex)
         {
@@ -52,8 +56,43 @@ public class WatchDogWindowsService : ServiceBase
 
     protected override void OnStop()
     {
+        _configWatcher?.Dispose();
         _engine?.Stop();
         _engine?.Dispose();
+    }
+
+    // config.json 변경 감지 — 트레이 앱에서 설정을 저장하면 서비스도 재시작 없이 즉시 반영
+    private void StartConfigWatcher()
+    {
+        _lastConfigWriteUtc = File.GetLastWriteTimeUtc(ConfigManager.ConfigFilePath);
+
+        _configWatcher = new FileSystemWatcher(
+            Path.GetDirectoryName(ConfigManager.ConfigFilePath)!,
+            Path.GetFileName(ConfigManager.ConfigFilePath))
+        {
+            NotifyFilter = NotifyFilters.LastWrite,
+            EnableRaisingEvents = true
+        };
+        _configWatcher.Changed += OnConfigFileChanged;
+    }
+
+    private void OnConfigFileChanged(object sender, FileSystemEventArgs e)
+    {
+        try
+        {
+            // 동일 저장에 대해 여러 번 발생하는 중복 이벤트 무시
+            var writeTime = File.GetLastWriteTimeUtc(ConfigManager.ConfigFilePath);
+            if (writeTime == _lastConfigWriteUtc) return;
+            _lastConfigWriteUtc = writeTime;
+
+            Thread.Sleep(200); // 파일 쓰기 완료 대기
+            _engine?.ReloadConfig(ConfigManager.Load());
+            _log?.Info(SvcName, "설정 변경 감지 — 감시 엔진 재적용됨");
+        }
+        catch
+        {
+            // 파일이 잠시 잠겨 있는 경우 등은 다음 변경 이벤트에서 재시도
+        }
     }
 
     public static void Install()

@@ -36,7 +36,7 @@ public class WatchDogEngineIntegrationTests : IDisposable
 
     // 기본 설정: 두 프로그램 모두 "현재 테스트 프로세스"를 감시 대상으로 지정 →
     // 실제 ProcessMonitor가 항상 실행 중으로 판단하여 재시작이 발생하지 않는다.
-    private AppConfig CreateConfig(PdfFolderConfig? pdfFolder = null, IntervalConfig? intervals = null) => new()
+    private AppConfig CreateConfig(PdfFolderConfig? pdfFolder = null) => new()
     {
         Erweka = new ProgramConfig
         {
@@ -54,8 +54,7 @@ public class WatchDogEngineIntegrationTests : IDisposable
             MaxRestartAttempts     = 3,
             RestartCooldownSeconds = 0
         },
-        PdfFolder = pdfFolder ?? new PdfFolderConfig(),
-        Intervals = intervals ?? new IntervalConfig()
+        PdfFolder = pdfFolder ?? new PdfFolderConfig()
     };
 
     private WatchDogEngine CreateEngine(AppConfig config) =>
@@ -178,8 +177,12 @@ public class WatchDogEngineIntegrationTests : IDisposable
     [Fact]
     public void StartStop_WithRealTimers_PeriodicallyRaisesStatusEvents_AndStopsCleanly()
     {
-        var engine = CreateEngine(CreateConfig(
-            intervals: new IntervalConfig { ProcessCheckSeconds = 1, FileActivityCheckMinutes = 60 }));
+        var config = CreateConfig();
+        config.Erweka.ProcessCheckSeconds       = 1;
+        config.TabmachineIF.ProcessCheckSeconds = 1;
+        config.PdfFolder.FileActivityCheckMinutes = 60;
+
+        var engine = CreateEngine(config);
 
         var eventCount = 0;
         engine.ProgramStatusChanged += _ => Interlocked.Increment(ref eventCount);
