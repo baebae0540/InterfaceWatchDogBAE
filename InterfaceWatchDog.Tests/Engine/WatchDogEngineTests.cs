@@ -134,14 +134,14 @@ public class WatchDogEngineTests : IDisposable
         var erwekaStatuses = new List<ProgramStatus>();
         engine.ProgramStatusChanged += s => { if (s.Key == "Erweka") erwekaStatuses.Add(s); };
 
-        // MaxRestartAttempts=3 → 로직: failures 1→restart, 2→restart, 3→Failed(재시작 없음)
-        // TryRestart 호출: 2회 (failures=1,2), failures=3 도달 시 skip → Failed
+        // MaxRestartAttempts=3 → 로직: failures 1,2→Restarting, 3→Failed
+        // failures>=3 이후에도 재시작 시도 자체는 쿨다운마다 계속 반복된다
         engine.CheckProcesses(); // failures=1, restart#1 (실패)
         engine.CheckProcesses(); // failures=2, restart#2 (실패)
-        engine.CheckProcesses(); // failures=3, Failed 상태 진입 (재시작 없음)
+        engine.CheckProcesses(); // failures=3, Failed 상태 진입 + restart#3 (실패)
 
         erwekaStatuses.Last().Status.Should().Be(HealthStatus.Failed);
-        _pr.Received(2).TryRestart(Arg.Any<ProgramConfig>());
+        _pr.Received(3).TryRestart(Arg.Any<ProgramConfig>());
     }
 
     // ── 4. Failed 상태에서 프로세스 복구 → Healthy 복귀 ─────────────────────
