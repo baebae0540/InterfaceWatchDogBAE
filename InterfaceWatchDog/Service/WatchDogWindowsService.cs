@@ -40,7 +40,7 @@ public class WatchDogWindowsService : ServiceBase
             }
 
             var config = ConfigManager.Load();
-            _engine = new WatchDogEngine(config, _log);
+            _engine = new WatchDogEngine(config, _log, isInteractiveSession: false);
             _engine.Start();
 
             StartConfigWatcher();

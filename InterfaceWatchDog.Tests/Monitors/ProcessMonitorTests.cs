@@ -49,4 +49,51 @@ public class ProcessMonitorTests
         info!.Pid.Should().BeGreaterThan(0);
         info.ProcessName.Should().NotBeNullOrEmpty();
     }
+
+    // ── 실행 파일 경로 기준 구분 (동일 이름의 다른 프로세스와 구분) ──────────────
+
+    [Fact]
+    public void IsRunning_WithMatchingExecutablePath_ShouldReturnTrue()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+        var currentPath = current.MainModule!.FileName;
+
+        _monitor.IsRunning(current.ProcessName, currentPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsRunning_WithMismatchedExecutablePath_ShouldReturnFalse()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+
+        _monitor.IsRunning(current.ProcessName, "C:\\other\\unrelated.exe").Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetProcessInfo_WithMismatchedExecutablePath_ShouldReturnNull()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+
+        _monitor.GetProcessInfo(current.ProcessName, "C:\\other\\unrelated.exe").Should().BeNull();
+    }
+
+    // ── 명령행 인수 기준 구분 (동일 실행 파일을 공유하는 프로세스와 구분) ────────
+
+    [Fact]
+    public void IsRunning_WithMatchingCommandLineSubstring_ShouldReturnTrue()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+        var exeName = Path.GetFileName(current.MainModule!.FileName);
+
+        // 자기 자신의 실행 파일 이름은 명령행에 항상 포함됨
+        _monitor.IsRunning(current.ProcessName, "", exeName).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsRunning_WithNonMatchingCommandLineSubstring_ShouldReturnFalse()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+
+        _monitor.IsRunning(current.ProcessName, "", "zzz_no_such_argument_xyz_12345").Should().BeFalse();
+    }
 }

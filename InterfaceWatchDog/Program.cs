@@ -37,7 +37,8 @@ static class Program
 
         var config = ConfigManager.Load();
         var log = new LogWriter();
-        var engine = new WatchDogEngine(config, log);
+
+        var engine = new WatchDogEngine(config, log, isInteractiveSession: true);
 
         // 최초 실행: 설정 화면 자동 표시
         if (ConfigManager.IsFirstRun())

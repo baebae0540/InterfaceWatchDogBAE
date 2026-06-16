@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using InterfaceWatchDog.Core.Models;
+using InterfaceWatchDog.Core;
 
 namespace InterfaceWatchDog.Core.Actions;
 
@@ -15,7 +16,7 @@ public class ProcessRestarter : IProcessRestarter
 
         try
         {
-            KillExisting(config.ProcessName);
+            KillExisting(config.ProcessName, config.ExecutablePath, config.Arguments);
 
             var startInfo = new ProcessStartInfo
             {
@@ -45,11 +46,13 @@ public class ProcessRestarter : IProcessRestarter
         }
     }
 
-    private static void KillExisting(string processName)
+    // 실행 파일 경로 + 명령행 인수가 일치하는 프로세스만 종료한다.
+    // (예: javaw.exe — 운영서버의 다른 Java 프로그램까지 함께 종료되는 것을 방지)
+    private static void KillExisting(string processName, string executablePath, string commandLineContains)
     {
         if (string.IsNullOrWhiteSpace(processName)) return;
 
-        foreach (var p in Process.GetProcessesByName(processName))
+        foreach (var p in ProcessMatcher.Find(processName, executablePath, commandLineContains))
         {
             try { p.Kill(entireProcessTree: true); }
             catch { /* 이미 종료된 프로세스 무시 */ }

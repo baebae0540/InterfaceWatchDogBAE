@@ -61,7 +61,7 @@ public class ConfigManagerIntegrationTests : IDisposable
         ConfigManager.IsFirstRun().Should().BeTrue();
 
         var loaded = ConfigManager.Load();
-        loaded.Erweka.ProcessName.Should().Be("ExportManager");
+        loaded.Erweka.ProcessName.Should().Be("javaw");
         loaded.TabmachineIF.ProcessName.Should().Be("TabmachineIF");
     }
 

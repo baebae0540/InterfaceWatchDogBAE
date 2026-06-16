@@ -1,18 +1,19 @@
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using InterfaceWatchDog.Core.Models;
+using InterfaceWatchDog.Core;
 
 namespace InterfaceWatchDog.Core.Monitors;
 
 public class ProcessMonitor : IProcessMonitor
 {
-    public bool IsRunning(string processName)
+    public bool IsRunning(string processName, string executablePath = "", string commandLineContains = "")
     {
         if (string.IsNullOrWhiteSpace(processName)) return false;
 
         try
         {
-            var processes = Process.GetProcessesByName(processName);
-            return processes.Length > 0;
+            return ProcessMatcher.Find(processName, executablePath, commandLineContains).Any();
         }
         catch
         {
@@ -20,16 +21,28 @@ public class ProcessMonitor : IProcessMonitor
         }
     }
 
-    public ProcessInfo? GetProcessInfo(string processName)
+    public bool IsPortListening(int port)
+    {
+        try
+        {
+            var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
+            return listeners.Any(ep => ep.Port == port);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public ProcessInfo? GetProcessInfo(string processName, string executablePath = "", string commandLineContains = "")
     {
         if (string.IsNullOrWhiteSpace(processName)) return null;
 
         try
         {
-            var processes = Process.GetProcessesByName(processName);
-            if (processes.Length == 0) return null;
+            var p = ProcessMatcher.Find(processName, executablePath, commandLineContains).FirstOrDefault();
+            if (p == null) return null;
 
-            var p = processes[0];
             return new ProcessInfo
             {
                 ProcessName = p.ProcessName,
