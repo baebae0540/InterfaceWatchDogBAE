@@ -12,6 +12,7 @@ public class SettingsForm : Form
     private TextBox       _erwekaArguments   = null!;
     private NumericUpDown _erwekaMaxRetry    = null!;
     private NumericUpDown _erwekaCheckSec    = null!;
+    private NumericUpDown _erwekaPort        = null!;
 
     private TextBox       _tabProcessName = null!;
     private TextBox       _tabExePath     = null!;
@@ -80,22 +81,27 @@ public class SettingsForm : Form
         // ── TabControl ───────────────────────────────────────────────────────
         var tabs = new TabControl { Dock = DockStyle.Fill, Font = new Font("맑은 고딕", 9.5f), Padding = new Point(16, 6) };
 
-        // 탭 1: ERWEKA — rows: text(0-1) + browse(2-3) + text(4-5) + num(6) + num(7)
+        // 탭 1: ERWEKA — rows: text(0-1) + browse(2-3) + text(4-5) + num(6) + num(7) + num(8)
         var (pg1, tbl1) = MakeTab("① ERWEKA Export Manager");
-        AddRowStyles(tbl1, 42, 28, 42, 28, 42, 28, 52, 52);
+        AddRowStyles(tbl1, 42, 28, 42, 28, 42, 28, 52, 52, 52);
         tbl1.SuspendLayout();
-        _erwekaProcessName = AddTextAt(tbl1, 0, "프로세스 이름",   "확장자(.exe) 없이 입력   예) ExportManager   (비워두면 ERWEKA 감시를 사용하지 않음)");
+        _erwekaProcessName = AddTextWithButtonAt(tbl1, 0, "프로세스 이름",
+            "확장자(.exe) 없이 입력 — \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
+            "가져오기", (_, _) => PickRunningProgram(_erwekaProcessName, _erwekaExePath, _erwekaArguments, _erwekaPort));
         _erwekaExePath     = AddBrowseAt(tbl1, 2, "실행 파일 경로",  "미입력 시 감시만 수행 (재시작 불가)", isExe: true,  autoFill: _erwekaProcessName);
-        _erwekaArguments   = AddTextAt(tbl1, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수");
-        _erwekaMaxRetry    = AddNumAt(tbl1, 6, "최대 재시작 횟수",  1, 10, "회");
-        _erwekaCheckSec    = AddNumAt(tbl1, 7, "프로세스 체크 주기", 10, 300, "초");
+        _erwekaArguments   = AddTextAt(tbl1, 4, "실행 인수 (선택)", "재시작 시 전달할 명령행 인수 (예: -jar \"...\\Export Manager....exe\"). 다른 javaw 프로세스와 구분하는 데도 사용됩니다.");
+        _erwekaPort        = AddNumAt(tbl1, 6, "TCP 포트 감시 (0=미사용)", 0, 65535, "포트");
+        _erwekaMaxRetry    = AddNumAt(tbl1, 7, "최대 재시작 횟수",  1, 10, "회");
+        _erwekaCheckSec    = AddNumAt(tbl1, 8, "프로세스 체크 주기", 10, 300, "초");
         tbl1.ResumeLayout(true);
 
         // 탭 2: TabmachineIF — 동일 구조
         var (pg2, tbl2) = MakeTab("② TabmachineIF");
         AddRowStyles(tbl2, 42, 28, 42, 28, 42, 28, 52, 52);
         tbl2.SuspendLayout();
-        _tabProcessName = AddTextAt(tbl2, 0, "프로세스 이름 *",   "확장자(.exe) 없이 입력   예) TabmachineIF");
+        _tabProcessName = AddTextWithButtonAt(tbl2, 0, "프로세스 이름 *",
+            "확장자(.exe) 없이 입력   예) TabmachineIF — 잘 모르면 우측 \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
+            "가져오기", (_, _) => PickRunningProgram(_tabProcessName, _tabExePath, _tabArguments));
         _tabExePath     = AddBrowseAt(tbl2, 2, "실행 파일 경로 *", "재시작에 사용할 실행 파일 경로",         isExe: true, autoFill: _tabProcessName);
         _tabArguments   = AddTextAt(tbl2, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수");
         _tabMaxRetry    = AddNumAt(tbl2, 6, "최대 재시작 횟수",  1, 10, "회");
@@ -175,6 +181,72 @@ public class SettingsForm : Form
         grid.SetColumnSpan(hintLbl, 2);
 
         return txt;
+    }
+
+    // =========================================================================
+    // 텍스트 입력 + 커스텀 버튼 행: row=입력행, row+1=힌트행
+    // =========================================================================
+    private static TextBox AddTextWithButtonAt(TableLayoutPanel grid, int row, string label, string hint,
+        string buttonText, EventHandler onClick)
+    {
+        grid.Controls.Add(MakeLbl(label), 0, row);
+
+        var txt = new TextBox
+        {
+            Dock   = DockStyle.Fill,
+            Font   = new Font("맑은 고딕", 9.5f),
+            Margin = new Padding(0, 6, 4, 6)
+        };
+        grid.Controls.Add(txt, 1, row);
+
+        var btn = new Button
+        {
+            Dock        = DockStyle.Fill,
+            Text        = buttonText,
+            FlatStyle   = FlatStyle.Flat,
+            Font        = new Font("맑은 고딕", 8.5f),
+            BackColor   = Color.FromArgb(210, 215, 228),
+            ForeColor   = Color.FromArgb(30, 36, 60),
+            Cursor      = Cursors.Hand,
+            Margin      = new Padding(4, 4, 0, 4),
+            MinimumSize = new Size(90, 0)
+        };
+        btn.FlatAppearance.BorderColor = Color.FromArgb(150, 160, 190);
+        btn.FlatAppearance.BorderSize  = 1;
+        btn.Click += onClick;
+        grid.Controls.Add(btn, 2, row);
+
+        var hintLbl = MakeHint(hint);
+        grid.Controls.Add(hintLbl, 1, row + 1);
+        grid.SetColumnSpan(hintLbl, 2);
+
+        return txt;
+    }
+
+    // 실행 중인 프로그램 창을 선택해 프로세스 이름/실행 파일 경로/실행 인수(및 TCP 포트)를 자동으로 채운다.
+    private static void PickRunningProgram(TextBox processName, TextBox exePath, TextBox arguments, NumericUpDown? port = null)
+    {
+        using var picker = new ProcessPickerForm();
+        if (picker.ShowDialog() != DialogResult.OK || picker.Selected == null) return;
+
+        var info = RunningProgramFinder.GetLaunchInfo(picker.Selected.Pid);
+        if (info == null)
+        {
+            MessageBox.Show("선택한 프로그램의 정보를 가져올 수 없습니다.",
+                "InterfaceWatchDog", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        processName.Text = info.ProcessName;
+        exePath.Text     = info.ExecutablePath;
+        arguments.Text   = info.Arguments;
+
+        if (port != null && info.ListeningPorts.Count > 0)
+        {
+            var p = info.ListeningPorts[0];
+            if (p >= port.Minimum && p <= port.Maximum)
+                port.Value = p;
+        }
     }
 
     // =========================================================================
@@ -317,6 +389,7 @@ public class SettingsForm : Form
         _erwekaArguments.Text    = _config.Erweka.Arguments;
         _erwekaMaxRetry.Value    = Math.Clamp(_config.Erweka.MaxRestartAttempts, 1, 10);
         _erwekaCheckSec.Value    = Math.Clamp(_config.Erweka.ProcessCheckSeconds, 10, 300);
+        _erwekaPort.Value        = Math.Clamp(_config.Erweka.Port, 0, 65535);
 
         _tabProcessName.Text     = _config.TabmachineIF.ProcessName;
         _tabExePath.Text         = _config.TabmachineIF.ExecutablePath;
@@ -344,6 +417,7 @@ public class SettingsForm : Form
         _config.Erweka.Arguments            = _erwekaArguments.Text.Trim();
         _config.Erweka.MaxRestartAttempts   = (int)_erwekaMaxRetry.Value;
         _config.Erweka.ProcessCheckSeconds  = (int)_erwekaCheckSec.Value;
+        _config.Erweka.Port                 = (int)_erwekaPort.Value;
 
         _config.TabmachineIF.ProcessName          = _tabProcessName.Text.Trim();
         _config.TabmachineIF.ExecutablePath       = _tabExePath.Text.Trim();

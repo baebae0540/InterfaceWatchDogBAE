@@ -29,19 +29,27 @@ public class WatchDogEngine : IDisposable
     public event Action<ProgramStatus>?     ProgramStatusChanged;
     public event Action<FileActivityStatus>? FileStatusChanged;
 
+    // 이 인스턴스가 대화형 사용자 세션(트레이 앱)에서 실행 중인지 여부
+    // (Windows 서비스는 세션 0에서 실행되며, 재시작은 이 값이 true인 인스턴스만
+    //  전담한다 — 두 감시 대상 모두 재시작 후 사용자가 화면에서 설정/시작 버튼을
+    //  눌러야 하므로, 세션 0에서 재시작하면 창이 보이지 않아 무용지물이 됨)
+    private readonly bool _isInteractiveSession;
+
     // 프로덕션 생성자 — 구체 클래스를 직접 생성
-    public WatchDogEngine(AppConfig config, LogWriter log)
-        : this(config, log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter()) { }
+    public WatchDogEngine(AppConfig config, LogWriter log, bool isInteractiveSession = true)
+        : this(config, log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter(), isInteractiveSession) { }
 
     // 테스트/DI 생성자 — 인터페이스 주입 (InternalsVisibleTo로 테스트 프로젝트에서 접근)
     internal WatchDogEngine(AppConfig config, LogWriter log,
-        IProcessMonitor processMonitor, IFileActivityMonitor fileMonitor, IProcessRestarter restarter)
+        IProcessMonitor processMonitor, IFileActivityMonitor fileMonitor, IProcessRestarter restarter,
+        bool isInteractiveSession = true)
     {
         _config         = config;
         _log            = log;
         _processMonitor = processMonitor;
         _fileMonitor    = fileMonitor;
         _restarter      = restarter;
+        _isInteractiveSession = isInteractiveSession;
         _log.LogGenerated += _ => { };
     }
 
@@ -118,25 +126,50 @@ public class WatchDogEngine : IDisposable
         }
 
         var tracker   = _trackers[key];
-        var isRunning = _processMonitor.IsRunning(cfg.ProcessName);
+        var isRunning = _processMonitor.IsRunning(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments);
 
-        // 프로세스 실행 중이면 항상 정상 처리 (Failed 상태에서도 복구)
-        if (isRunning)
+        // 포트 감시 설정 시: 프로세스는 살아있어도 TCP LISTEN 상태가 아니면 장애로 간주
+        // (TCP 서버 프로그램이 행(hang)되어 더 이상 요청을 받지 못하는 상태 검출용)
+        var portOk = cfg.Port <= 0 || _processMonitor.IsPortListening(cfg.Port);
+
+        // 이 인스턴스가 이 프로그램의 재시작을 전담하는지 여부
+        // ERWEKA, TabmachineIF 모두 재시작 후 사용자가 화면에서 설정/시작 버튼을
+        // 눌러야 하므로, 항상 대화형 세션(트레이 앱)만 재시작을 전담한다.
+        // (서비스가 재시작하면 세션 0 격리로 인해 새 창이 사용자 화면에 보이지 않음)
+        var shouldRestart = _isInteractiveSession;
+
+        // 정상: 프로세스 실행 중 + (포트 감시 미설정 또는 포트 LISTEN 정상) — Failed 상태에서도 복구
+        if (isRunning && portOk)
         {
             status.IsRunning      = true;
             status.LastSeenAlive  = DateTime.Now;
 
-            if (status.Status != HealthStatus.Healthy)
+            // 재시작 비전담 인스턴스(트레이 등)는 복구 로그를 남기지 않음 — 전담 인스턴스 쪽에서 이미 기록함
+            if (status.Status != HealthStatus.Healthy && shouldRestart)
                 _log.Info(cfg.DisplayName, "프로세스 정상 감지 (복구됨)");
 
+            var portInfo = cfg.Port > 0 ? $", 포트 {cfg.Port} LISTEN" : "";
             UpdateStatus(ref status, HealthStatus.Healthy,
-                $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName)?.Pid})");
+                $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments)?.Pid}{portInfo})");
             tracker.ResetFailures();
             return;
         }
 
-        // 프로세스 없음 — 쿨다운 중이면 재시작 시도 생략
-        status.IsRunning = false;
+        status.IsRunning = isRunning;
+
+        // 장애 원인 — 프로세스 자체가 없는지, 프로세스는 있으나 포트가 응답하지 않는지 구분
+        var downReason = isRunning
+            ? $"포트 {cfg.Port} 응답 없음 (TCP LISTEN 아님)"
+            : "프로세스 미감지";
+
+        // 재시작 비전담 인스턴스(서비스 등) — 상태 표시만 갱신하고 재시작/로그/트래커는 건드리지 않음
+        if (!shouldRestart)
+        {
+            UpdateStatus(ref status, HealthStatus.Warning, $"{downReason} — 재시작은 트레이 앱(사용자 화면)이 처리합니다");
+            return;
+        }
+
+        // 쿨다운 중이면 재시작 시도 생략
         if (tracker.IsInCooldown(cfg.RestartCooldownSeconds)) return;
 
         tracker.IncrementFailure();
@@ -154,7 +187,7 @@ public class WatchDogEngine : IDisposable
         else
         {
             _log.Warn(cfg.DisplayName,
-                $"프로세스 미감지 — 재시작 시도 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
+                $"{downReason} — 재시작 시도 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
             UpdateStatus(ref status, HealthStatus.Restarting,
                 $"재시작 시도 중 ({tracker.ConsecutiveFailures}/{cfg.MaxRestartAttempts})");
         }
