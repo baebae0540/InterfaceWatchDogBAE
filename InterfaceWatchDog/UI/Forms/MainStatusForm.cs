@@ -335,7 +335,7 @@ public class MainStatusForm : Form
     private void OpenSettings()
     {
         var config = ConfigManager.Load();
-        using var form = new SettingsForm(config);
+        using var form = new SettingsForm(config, _engine.CheckErwekaRunningNow());
         if (form.ShowDialog() == DialogResult.OK)
         {
             var newCfg = ConfigManager.Load();
