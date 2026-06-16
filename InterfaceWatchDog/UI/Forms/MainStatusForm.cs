@@ -19,8 +19,9 @@ public class MainStatusForm : Form
     private Label  _pdfLastVal       = null!;
     private Label  _pdfFolderVal     = null!;
 
-    private ListBox _logList       = null!;
-    private Label   _lastCheckLbl  = null!;
+    private ListBox        _logList       = null!;
+    private Label          _lastCheckLbl  = null!;
+    private LogViewerForm? _logViewer;
 
     public MainStatusForm(WatchDogEngine engine, LogWriter log, AppConfig config)
     {
@@ -225,7 +226,18 @@ public class MainStatusForm : Form
         };
 
         var btnLog = MakeBtn("로그 보기", Color.FromArgb(33, 150, 243));
-        btnLog.Click += (_, _) => new LogViewerForm(_log).Show();
+        btnLog.Click += (_, _) =>
+        {
+            if (_logViewer == null || _logViewer.IsDisposed)
+            {
+                _logViewer = new LogViewerForm(_log);
+                _logViewer.Show();
+            }
+            else
+            {
+                _logViewer.Activate();
+            }
+        };
 
         var btnSettings = MakeBtn("설정", Color.FromArgb(80, 90, 110));
         btnSettings.Click += (_, _) => OpenSettings();
