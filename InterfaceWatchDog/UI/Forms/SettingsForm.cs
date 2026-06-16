@@ -6,6 +6,7 @@ namespace InterfaceWatchDog.UI.Forms;
 public class SettingsForm : Form
 {
     private AppConfig _config;
+    private readonly bool _erwekaIsRunning;
 
     private TextBox       _erwekaProcessName = null!;
     private TextBox       _erwekaExePath     = null!;
@@ -25,9 +26,10 @@ public class SettingsForm : Form
     private NumericUpDown _pdfMaxBacklog = null!;
     private NumericUpDown _pdfCheckMin   = null!;
 
-    public SettingsForm(AppConfig config)
+    public SettingsForm(AppConfig config, bool erwekaIsRunning = false)
     {
         _config = config;
+        _erwekaIsRunning = erwekaIsRunning;
         AutoScaleMode = AutoScaleMode.Dpi;
         InitializeComponent();
         LoadValues();
@@ -89,7 +91,7 @@ public class SettingsForm : Form
             "확장자(.exe) 없이 입력 — \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
             "가져오기", (_, _) => PickRunningProgram(_erwekaProcessName, _erwekaExePath, _erwekaArguments, _erwekaPort));
         _erwekaExePath     = AddBrowseAt(tbl1, 2, "실행 파일 경로",  "미입력 시 감시만 수행 (재시작 불가)", isExe: true,  autoFill: _erwekaProcessName);
-        _erwekaArguments   = AddTextAt(tbl1, 4, "실행 인수 (선택)", "재시작 시 전달할 명령행 인수 (예: -jar \"...\\Export Manager....exe\"). 다른 javaw 프로세스와 구분하는 데도 사용됩니다.");
+        _erwekaArguments   = AddTextAt(tbl1, 4, "프로세스 구분 문자열", "동일 이름의 다른 프로세스와 구분하기 위한 명령행 포함 문자열 (예: Export Manager). 재시작 시 인수로는 전달되지 않습니다.");
         _erwekaPort        = AddNumAt(tbl1, 6, "TCP 포트 감시 (0=미사용)", 0, 65535, "포트");
         _erwekaMaxRetry    = AddNumAt(tbl1, 7, "최대 재시작 횟수",  1, 10, "회");
         _erwekaCheckSec    = AddNumAt(tbl1, 8, "프로세스 체크 주기", 10, 300, "초");
@@ -118,6 +120,7 @@ public class SettingsForm : Form
         _pdfCheckMin   = AddNumAt(tbl3, 4, "파일 활동 체크 주기",    1,  60, "분");
         tbl3.ResumeLayout(true);
 
+        pg3.Enabled = _erwekaIsRunning;
         tabs.TabPages.AddRange([pg1, pg2, pg3]);
         Controls.Add(tabs);
         Controls.Add(btnBar);

@@ -473,5 +473,71 @@ public class WatchDogEngineTests : IDisposable
         tab.StatusMessage.Should().Contain("트레이 앱");
     }
 
+    // ── 12. CheckErwekaRunningNow — 설정 열기 시 실시간 Tab3 활성화 판단 ────────
+
+    [Fact]
+    public void CheckErwekaRunningNow_WhenProcessNameEmpty_ReturnsFalse()
+    {
+        _config.Erweka.ProcessName = "";
+        var engine = CreateEngine();
+
+        engine.CheckErwekaRunningNow().Should().BeFalse();
+        _pm.DidNotReceive().IsRunning(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckErwekaRunningNow_WhenProcessRunningNoPort_ReturnsTrue()
+    {
+        _pm.IsRunning("test-erweka", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        var engine = CreateEngine();
+
+        engine.CheckErwekaRunningNow().Should().BeTrue();
+    }
+
+    [Fact]
+    public void CheckErwekaRunningNow_WhenProcessNotRunning_ReturnsFalse()
+    {
+        _pm.IsRunning("test-erweka", Arg.Any<string>(), Arg.Any<string>()).Returns(false);
+        var engine = CreateEngine();
+
+        engine.CheckErwekaRunningNow().Should().BeFalse();
+    }
+
+    [Fact]
+    public void CheckErwekaRunningNow_WhenProcessRunningAndPortListening_ReturnsTrue()
+    {
+        _config.Erweka.Port = 9100;
+        _pm.IsRunning("test-erweka", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _pm.IsPortListening(9100).Returns(true);
+        var engine = CreateEngine();
+
+        engine.CheckErwekaRunningNow().Should().BeTrue();
+    }
+
+    [Fact]
+    public void CheckErwekaRunningNow_WhenProcessRunningButPortNotListening_ReturnsFalse()
+    {
+        _config.Erweka.Port = 9100;
+        _pm.IsRunning("test-erweka", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _pm.IsPortListening(9100).Returns(false);
+        var engine = CreateEngine();
+
+        engine.CheckErwekaRunningNow().Should().BeFalse();
+    }
+
+    [Fact]
+    public void CheckErwekaRunningNow_DoesNotMutateStatusOrFireEvents()
+    {
+        _pm.IsRunning("test-erweka", Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        var engine = CreateEngine();
+        var events = new List<ProgramStatus>();
+        engine.ProgramStatusChanged += s => events.Add(s);
+
+        engine.CheckErwekaRunningNow();
+
+        events.Should().BeEmpty();
+        engine.GetCurrentStatus().erweka.Status.Should().Be(HealthStatus.Unknown);
+    }
+
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 }

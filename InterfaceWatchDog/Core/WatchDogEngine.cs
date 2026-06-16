@@ -95,6 +95,13 @@ public class WatchDogEngine : IDisposable
     public (ProgramStatus erweka, ProgramStatus tabmachine, FileActivityStatus file) GetCurrentStatus()
         => (_erwekaStatus, _tabmachineStatus, _fileStatus);
 
+    public bool CheckErwekaRunningNow()
+        => !string.IsNullOrWhiteSpace(_config.Erweka.ProcessName)
+           && _processMonitor.IsRunning(_config.Erweka.ProcessName,
+                                        _config.Erweka.ExecutablePath,
+                                        _config.Erweka.Arguments)
+           && (_config.Erweka.Port <= 0 || _processMonitor.IsPortListening(_config.Erweka.Port));
+
     // ─── 프로세스 감시 ────────────────────────────────────────────────────────
 
     // internal: 두 프로그램 일괄 점검 (테스트에서 직접 호출 가능)
