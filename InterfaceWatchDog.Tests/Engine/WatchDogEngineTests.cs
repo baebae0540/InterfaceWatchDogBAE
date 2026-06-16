@@ -216,6 +216,98 @@ public class WatchDogEngineTests : IDisposable
         received!.IsIdleWarning.Should().BeTrue();
     }
 
+    [Fact]
+    public void CheckFileActivity_WhenSubscriberThrows_ShouldLogAndNotThrow()
+    {
+        _fm.Check(Arg.Any<PdfFolderConfig>()).Returns(new FileActivityStatus { StatusMessage = "정상" });
+
+        var engine = CreateEngine();
+        engine.FileStatusChanged += _ => throw new InvalidOperationException("subscriber failed");
+
+        var act = () => engine.CheckFileActivity();
+
+        act.Should().NotThrow();
+        _log.ReadTodayLogs().Should().Contain(l =>
+            l.Level == LogLevel.Error &&
+            l.Source == "FileMonitor" &&
+            l.Message.Contains("subscriber failed"));
+    }
+
+    [Fact]
+    public async Task ReloadConfig_WhenFileCheckIsInFlight_ShouldIgnoreStaleFileStatus()
+    {
+        var firstCheckEntered = new ManualResetEventSlim();
+        var releaseFirstCheck = new ManualResetEventSlim();
+        var checkCount = 0;
+
+        var staleStatus = new FileActivityStatus
+        {
+            IsFolderConfigured = true,
+            FileCount = 10,
+            StatusMessage = "old"
+        };
+        var freshStatus = new FileActivityStatus
+        {
+            IsFolderConfigured = true,
+            FileCount = 1,
+            StatusMessage = "new"
+        };
+
+        _fm.Check(Arg.Any<PdfFolderConfig>()).Returns(_ =>
+        {
+            if (Interlocked.Increment(ref checkCount) == 1)
+            {
+                firstCheckEntered.Set();
+                releaseFirstCheck.Wait(TimeSpan.FromSeconds(2));
+                return staleStatus;
+            }
+
+            return freshStatus;
+        });
+
+        var engine = CreateEngine();
+        var received = new List<FileActivityStatus>();
+        var receivedLock = new object();
+        engine.FileStatusChanged += s =>
+        {
+            lock (receivedLock)
+            {
+                received.Add(s);
+            }
+        };
+
+        var firstCheck = Task.Run(engine.CheckFileActivity);
+
+        firstCheckEntered.Wait(TimeSpan.FromSeconds(2)).Should().BeTrue();
+        engine.ReloadConfig(new AppConfig
+        {
+            Erweka = new ProgramConfig { DisplayName = "새 ERWEKA" },
+            TabmachineIF = new ProgramConfig { DisplayName = "새 Tab" },
+            PdfFolder = new PdfFolderConfig { Path = "new" }
+        });
+        releaseFirstCheck.Set();
+
+        await firstCheck.WaitAsync(TimeSpan.FromSeconds(2));
+        SpinWait.SpinUntil(() =>
+        {
+            lock (receivedLock)
+            {
+                return received.Any(s => s.FileCount == 1);
+            }
+        },
+            TimeSpan.FromSeconds(2)).Should().BeTrue();
+        engine.GetCurrentStatus().file.FileCount.Should().Be(1);
+
+        List<FileActivityStatus> snapshot;
+        lock (receivedLock)
+        {
+            snapshot = received.ToList();
+        }
+
+        snapshot.Should().NotContain(s => s.FileCount == 10);
+        snapshot.Should().ContainSingle(s => s.FileCount == 1);
+    }
+
     // ── 6. 프로세스 이름 미설정 → 감시 비활성화 (Disabled) ───────────────────
 
     [Fact]

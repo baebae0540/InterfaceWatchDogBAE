@@ -10,8 +10,9 @@ obj/
 # Publish
 publish/
 
-# Installer Output
+# Installer Output & Patch
 Installer/Output/
+Installer/Patch/
 
 # Logs
 logs/

@@ -89,7 +89,7 @@ public class SettingsForm : Form
         tbl1.SuspendLayout();
         _erwekaProcessName = AddTextWithButtonAt(tbl1, 0, "프로세스 이름",
             "확장자(.exe) 없이 입력 — \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
-            "가져오기", (_, _) => PickRunningProgram(_erwekaProcessName, _erwekaExePath, _erwekaArguments, _erwekaPort));
+            "가져오기", (_, _) => PickRunningProgram(_erwekaProcessName, _erwekaExePath, _erwekaArguments, _erwekaPort, this));
         _erwekaExePath     = AddBrowseAt(tbl1, 2, "실행 파일 경로",  "미입력 시 감시만 수행 (재시작 불가)", isExe: true,  autoFill: _erwekaProcessName);
         _erwekaArguments   = AddTextAt(tbl1, 4, "프로세스 구분 문자열", "동일 이름의 다른 프로세스와 구분하기 위한 명령행 포함 문자열 (예: Export Manager). 재시작 시 인수로는 전달되지 않습니다.");
         _erwekaPort        = AddNumAt(tbl1, 6, "TCP 포트 감시 (0=미사용)", 0, 65535, "포트");
@@ -102,9 +102,9 @@ public class SettingsForm : Form
         AddRowStyles(tbl2, 42, 28, 42, 28, 42, 28, 52, 52);
         tbl2.SuspendLayout();
         _tabProcessName = AddTextWithButtonAt(tbl2, 0, "프로세스 이름 *",
-            "확장자(.exe) 없이 입력   예) TabmachineIF — 잘 모르면 우측 \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
-            "가져오기", (_, _) => PickRunningProgram(_tabProcessName, _tabExePath, _tabArguments));
-        _tabExePath     = AddBrowseAt(tbl2, 2, "실행 파일 경로 *", "재시작에 사용할 실행 파일 경로",         isExe: true, autoFill: _tabProcessName);
+            "확장자(.exe) 없이 입력 — \"가져오기\"로 실행 중인 프로그램에서 자동 입력",
+            "가져오기", (_, _) => PickRunningProgram(_tabProcessName, _tabExePath, _tabArguments, owner: this));
+        _tabExePath     = AddBrowseAt(tbl2, 2, "실행 파일 경로",   "미입력 시 감시만 수행 (재시작 불가)", isExe: true, autoFill: _tabProcessName);
         _tabArguments   = AddTextAt(tbl2, 4, "실행 인수 (선택)", "재시작 시 함께 전달할 명령행 인수");
         _tabMaxRetry    = AddNumAt(tbl2, 6, "최대 재시작 횟수",  1, 10, "회");
         _tabCheckSec    = AddNumAt(tbl2, 7, "프로세스 체크 주기", 10, 300, "초");
@@ -227,15 +227,16 @@ public class SettingsForm : Form
     }
 
     // 실행 중인 프로그램 창을 선택해 프로세스 이름/실행 파일 경로/실행 인수(및 TCP 포트)를 자동으로 채운다.
-    private static void PickRunningProgram(TextBox processName, TextBox exePath, TextBox arguments, NumericUpDown? port = null)
+    private static void PickRunningProgram(TextBox processName, TextBox exePath, TextBox arguments,
+        NumericUpDown? port = null, IWin32Window? owner = null)
     {
         using var picker = new ProcessPickerForm();
-        if (picker.ShowDialog() != DialogResult.OK || picker.Selected == null) return;
+        if (picker.ShowDialog(owner) != DialogResult.OK || picker.Selected == null) return;
 
         var info = RunningProgramFinder.GetLaunchInfo(picker.Selected.Pid);
         if (info == null)
         {
-            MessageBox.Show("선택한 프로그램의 정보를 가져올 수 없습니다.",
+            MessageBox.Show(owner, "선택한 프로그램의 정보를 가져올 수 없습니다.",
                 "InterfaceWatchDog", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -292,7 +293,7 @@ public class SettingsForm : Form
             btn.Click += (_, _) =>
             {
                 using var dlg = new OpenFileDialog { Filter = "실행 파일 (*.exe)|*.exe" };
-                if (dlg.ShowDialog() == DialogResult.OK)
+                if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
                     txt.Text = dlg.FileName;
                     if (autoFill != null && string.IsNullOrWhiteSpace(autoFill.Text))
@@ -303,7 +304,7 @@ public class SettingsForm : Form
             btn.Click += (_, _) =>
             {
                 using var dlg = new FolderBrowserDialog { Description = "폴더 선택" };
-                if (dlg.ShowDialog() == DialogResult.OK)
+                if (dlg.ShowDialog(this) == DialogResult.OK)
                     txt.Text = dlg.SelectedPath;
             };
 
@@ -410,11 +411,10 @@ public class SettingsForm : Form
     {
         if (string.IsNullOrWhiteSpace(_tabProcessName.Text))
         {
-            MessageBox.Show("TabmachineIF의 프로세스 이름은 필수입니다.",
+            MessageBox.Show(this, "TabmachineIF의 프로세스 이름은 필수입니다.",
                 "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-
         _config.Erweka.ProcessName          = _erwekaProcessName.Text.Trim();
         _config.Erweka.ExecutablePath       = _erwekaExePath.Text.Trim();
         _config.Erweka.Arguments            = _erwekaArguments.Text.Trim();
