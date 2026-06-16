@@ -15,6 +15,8 @@ public class WatchDogEngine : IDisposable
     private System.Threading.Timer? _erwekaTimer;
     private System.Threading.Timer? _tabmachineTimer;
     private System.Threading.Timer? _fileTimer;
+    private readonly object _fileCheckLock = new();
+    private int _fileConfigVersion;
 
     private readonly Dictionary<string, RestartTracker> _trackers = new()
     {
@@ -90,6 +92,8 @@ public class WatchDogEngine : IDisposable
         _erwekaTimer?.Change(erwekaInterval, erwekaInterval);
         _tabmachineTimer?.Change(tabInterval, tabInterval);
         _fileTimer?.Change(fileInterval, fileInterval);
+        Interlocked.Increment(ref _fileConfigVersion);
+        QueueFileActivityCheck();
     }
 
     public (ProgramStatus erweka, ProgramStatus tabmachine, FileActivityStatus file) GetCurrentStatus()
@@ -230,15 +234,53 @@ public class WatchDogEngine : IDisposable
     // internal: 타이머 콜백 + 테스트에서 직접 호출 가능
     internal void CheckFileActivity()
     {
-        var result = _fileMonitor.Check(_config.PdfFolder);
-        _fileStatus = result;
+        try
+        {
+            lock (_fileCheckLock)
+            {
+                var configVersion = Volatile.Read(ref _fileConfigVersion);
+                var result = _fileMonitor.Check(_config.PdfFolder);
 
-        if (result.IsBacklogWarning)
-            _log.Warn("FileMonitor", result.StatusMessage);
-        else if (result.IsIdleWarning)
-            _log.Warn("FileMonitor", result.StatusMessage);
+                if (configVersion != Volatile.Read(ref _fileConfigVersion))
+                    return;
 
-        FileStatusChanged?.Invoke(result);
+                _fileStatus = result;
+
+                if (result.IsBacklogWarning)
+                    TryLogFileMonitorWarning(result.StatusMessage);
+                else if (result.IsIdleWarning)
+                    TryLogFileMonitorWarning(result.StatusMessage);
+
+                TryRaiseFileStatusChanged(result);
+            }
+        }
+        catch (Exception ex)
+        {
+            TryLogFileMonitorError($"파일 활동 확인 중 예외 발생: {ex.Message}");
+        }
+    }
+
+    private void QueueFileActivityCheck()
+    {
+        _ = Task.Run(CheckFileActivity);
+    }
+
+    private void TryRaiseFileStatusChanged(FileActivityStatus result)
+    {
+        try { FileStatusChanged?.Invoke(result); }
+        catch (Exception ex) { TryLogFileMonitorError($"파일 상태 변경 이벤트 처리 중 예외 발생: {ex.Message}"); }
+    }
+
+    private void TryLogFileMonitorWarning(string message)
+    {
+        try { _log.Warn("FileMonitor", message); }
+        catch (Exception ex) { TryLogFileMonitorError($"파일 활동 경고 로그 기록 중 예외 발생: {ex.Message}"); }
+    }
+
+    private void TryLogFileMonitorError(string message)
+    {
+        try { _log.Error("FileMonitor", message); }
+        catch { /* 로그/이벤트 실패는 백그라운드 작업으로 전파하지 않음 */ }
     }
 
     public void Dispose()

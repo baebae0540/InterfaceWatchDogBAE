@@ -8,7 +8,7 @@ public class MainStatusForm : Form
 {
     private readonly WatchDogEngine _engine;
     private readonly LogWriter      _log;
-    private readonly AppConfig      _config;
+    private AppConfig               _config;
 
     private StatusCard _erwekaCard = null!;
     private StatusCard _tabCard    = null!;
@@ -339,6 +339,7 @@ public class MainStatusForm : Form
         if (form.ShowDialog() == DialogResult.OK)
         {
             var newCfg = ConfigManager.Load();
+            _config = newCfg;
             _engine.ReloadConfig(newCfg);
             _pdfFolderVal.Text = newCfg.PdfFolder.Path;
             _log.Info("UI", "설정 변경 — 감시 엔진 재적용됨");
