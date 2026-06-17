@@ -38,15 +38,12 @@ public class WatchDogEngineIntegrationTests : IDisposable
     // 실제 ProcessMonitor가 항상 실행 중으로 판단하여 재시작이 발생하지 않는다.
     private AppConfig CreateConfig(PdfFolderConfig? pdfFolder = null) => new()
     {
-        Erweka = new ProgramConfig
+        Erweka = new ErwekaConfig
         {
-            DisplayName            = "통합ERWEKA",
-            ProcessName            = _selfProcessName,
-            ExecutablePath         = "",
-            MaxRestartAttempts     = 3,
-            RestartCooldownSeconds = 0
+            DisplayName = "통합ERWEKA",
+            ProcessName = _selfProcessName
         },
-        TabmachineIF = new ProgramConfig
+        TabmachineIF = new TabmachineConfig
         {
             DisplayName            = "통합Tab",
             ProcessName            = _selfProcessName,
@@ -58,7 +55,7 @@ public class WatchDogEngineIntegrationTests : IDisposable
     };
 
     private WatchDogEngine CreateEngine(AppConfig config) =>
-        new(config, _log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter());
+        new(config, _log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter(), new AlarmWriter(), new AlarmDbConfig());
 
     private static void KillAllDummyProcesses()
     {
@@ -69,15 +66,36 @@ public class WatchDogEngineIntegrationTests : IDisposable
         }
     }
 
-    // ── 1. 실제 프로세스 다운 → 실제 재시작 ──────────────────────────────────
+    // ── 1. 실제 프로세스 다운 → TabmachineIF 실제 재시작 ────────────────────
 
     [Fact]
-    public void CheckProcesses_WhenProcessNotRunning_RealRestarterLaunchesAndBecomesHealthy()
+    public void CheckProcesses_WhenTabNotRunning_RealRestarterLaunchesAndBecomesHealthy()
     {
         var config = CreateConfig();
-        config.Erweka.ProcessName    = DummyProcessName;
-        config.Erweka.ExecutablePath = _dummyExePath;
-        config.Erweka.Arguments      = DummyArguments;
+        config.TabmachineIF.ProcessName    = DummyProcessName;
+        config.TabmachineIF.ExecutablePath = _dummyExePath;
+        config.TabmachineIF.Arguments      = DummyArguments;
+
+        var engine = CreateEngine(config);
+        ProgramStatus? tab = null;
+        engine.ProgramStatusChanged += s => { if (s.Key == "TabmachineIF") tab = s; };
+
+        engine.CheckProcesses();
+
+        tab.Should().NotBeNull();
+        tab!.Status.Should().Be(HealthStatus.Healthy);
+        tab.RestartCount.Should().Be(1);
+        Process.GetProcessesByName(DummyProcessName).Should().NotBeEmpty();
+    }
+
+    // ── 1-1. ERWEKA 다운 → 재시작 없이 Failed 상태 ──────────────────────────
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaNotRunning_ShouldNotRestartAndBeFailed()
+    {
+        var config = CreateConfig();
+        config.Erweka.ProcessName = DummyProcessName;
+        config.Erweka.Arguments   = DummyArguments;
 
         var engine = CreateEngine(config);
         ProgramStatus? erweka = null;
@@ -86,9 +104,8 @@ public class WatchDogEngineIntegrationTests : IDisposable
         engine.CheckProcesses();
 
         erweka.Should().NotBeNull();
-        erweka!.Status.Should().Be(HealthStatus.Healthy);
-        erweka.RestartCount.Should().Be(1);
-        Process.GetProcessesByName(DummyProcessName).Should().NotBeEmpty();
+        erweka!.Status.Should().Be(HealthStatus.Failed);
+        erweka.RestartCount.Should().Be(0);
     }
 
     // ── 2. 이미 실행 중인 프로세스 → 재시작 시도 없음 ────────────────────────
@@ -97,12 +114,11 @@ public class WatchDogEngineIntegrationTests : IDisposable
     public void CheckProcesses_WhenProcessAlreadyRunning_ShouldNotRestart()
     {
         using var dummy = Process.Start(new ProcessStartInfo(_dummyExePath, DummyArguments) { UseShellExecute = false });
-        Thread.Sleep(500); // 프로세스 등록 대기
+        Thread.Sleep(500);
 
         var config = CreateConfig();
-        config.Erweka.ProcessName    = DummyProcessName;
-        config.Erweka.ExecutablePath = _dummyExePath;
-        config.Erweka.Arguments      = DummyArguments;
+        config.Erweka.ProcessName = DummyProcessName;
+        config.Erweka.Arguments   = DummyArguments;
 
         var engine = CreateEngine(config);
         ProgramStatus? erweka = null;

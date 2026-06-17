@@ -12,7 +12,9 @@ public class WatchDogWindowsService : ServiceBase
     private WatchDogEngine? _engine;
     private LogWriter? _log;
     private FileSystemWatcher? _configWatcher;
+    private FileSystemWatcher? _dbConfigWatcher;
     private DateTime _lastConfigWriteUtc;
+    private DateTime _lastDbConfigWriteUtc;
 
     public WatchDogWindowsService()
     {
@@ -44,6 +46,7 @@ public class WatchDogWindowsService : ServiceBase
             _engine.Start();
 
             StartConfigWatcher();
+            StartDbConfigWatcher();
         }
         catch (Exception ex)
         {
@@ -56,6 +59,7 @@ public class WatchDogWindowsService : ServiceBase
 
     protected override void OnStop()
     {
+        _dbConfigWatcher?.Dispose();
         _configWatcher?.Dispose();
         _engine?.Stop();
         _engine?.Dispose();
@@ -92,6 +96,39 @@ public class WatchDogWindowsService : ServiceBase
         catch
         {
             // 파일이 잠시 잠겨 있는 경우 등은 다음 변경 이벤트에서 재시도
+        }
+    }
+
+    private void StartDbConfigWatcher()
+    {
+        if (!File.Exists(ConfigManager.DbConfigFilePath)) return;
+
+        _lastDbConfigWriteUtc = File.GetLastWriteTimeUtc(ConfigManager.DbConfigFilePath);
+
+        _dbConfigWatcher = new FileSystemWatcher(
+            Path.GetDirectoryName(ConfigManager.DbConfigFilePath)!,
+            Path.GetFileName(ConfigManager.DbConfigFilePath))
+        {
+            NotifyFilter = NotifyFilters.LastWrite,
+            EnableRaisingEvents = true
+        };
+        _dbConfigWatcher.Changed += OnDbConfigFileChanged;
+    }
+
+    private void OnDbConfigFileChanged(object sender, FileSystemEventArgs e)
+    {
+        try
+        {
+            var writeTime = File.GetLastWriteTimeUtc(ConfigManager.DbConfigFilePath);
+            if (writeTime == _lastDbConfigWriteUtc) return;
+            _lastDbConfigWriteUtc = writeTime;
+
+            Thread.Sleep(200);
+            _engine?.ReloadAlarmDbConfig(ConfigManager.LoadAlarmDb());
+            _log?.Info(SvcName, "DB 설정 변경 감지 — 알람 DB 설정 재적용됨");
+        }
+        catch
+        {
         }
     }
 

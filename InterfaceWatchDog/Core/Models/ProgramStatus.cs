@@ -21,6 +21,7 @@ public class ProgramStatus
     public DateTime? LastSeenAlive { get; set; }
     public DateTime? LastRestartTime { get; set; }
     public string StatusMessage { get; set; } = "";
+    public int AlarmCount { get; set; }
 
     public string StatusText => Status switch
     {

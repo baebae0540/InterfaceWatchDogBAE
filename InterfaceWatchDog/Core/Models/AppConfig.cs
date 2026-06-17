@@ -4,50 +4,57 @@ namespace InterfaceWatchDog.Core.Models;
 
 public class AppConfig
 {
-    public ProgramConfig Erweka { get; set; } = new()
-    {
-        DisplayName = "ERWEKA Export Manager",
-        ProcessName = "javaw",
-        ExecutablePath = "",
-        Arguments = "",
-        MaxRestartAttempts = 3,
-        RestartCooldownSeconds = 60
-    };
-
-    public ProgramConfig TabmachineIF { get; set; } = new()
-    {
-        DisplayName = "TabmachineIF",
-        ProcessName = "TabmachineIF",
-        ExecutablePath = "",
-        Arguments = "",
-        MaxRestartAttempts = 3,
-        RestartCooldownSeconds = 60
-    };
-
+    public ErwekaConfig Erweka { get; set; } = new();
+    public TabmachineConfig TabmachineIF { get; set; } = new();
     public PdfFolderConfig PdfFolder { get; set; } = new();
+    public bool DbConnectionVerified { get; set; }
 }
 
-public class ProgramConfig
+public class ErwekaConfig
 {
-    public string DisplayName { get; set; } = "";
-    public string ProcessName { get; set; } = "";
+    public string DisplayName { get; set; } = "ERWEKA Export Manager";
+    public string ProcessName { get; set; } = "javaw";
+    public string Arguments { get; set; } = "";
+    public int ProcessCheckSeconds { get; set; } = 30;
+    public int Port { get; set; } = 0;
+}
+
+public class TabmachineConfig
+{
+    public string DisplayName { get; set; } = "TabmachineIF";
+    public string ProcessName { get; set; } = "TabmachineIF";
     public string ExecutablePath { get; set; } = "";
     public string Arguments { get; set; } = "";
     public int MaxRestartAttempts { get; set; } = 3;
     public int RestartCooldownSeconds { get; set; } = 60;
     public int ProcessCheckSeconds { get; set; } = 30;
 
-    // TCP 서버 프로그램의 LISTEN 포트 (0 = 포트 상태 확인 사용 안 함)
-    // 프로세스는 살아있지만 포트가 LISTEN 상태가 아니면 장애로 간주
-    public int Port { get; set; } = 0;
-
     [JsonIgnore]
     public bool CanRestart => !string.IsNullOrWhiteSpace(ExecutablePath) &&
                               File.Exists(ExecutablePath);
 }
 
+public class AlarmDbConfig
+{
+    public string Server { get; set; } = "";
+    public string Database { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string PlantCode { get; set; } = "";
+
+    [JsonIgnore]
+    public string ConnectionString =>
+        $"Server={Server};Database={Database};User Id={UserId};Password={Password};TrustServerCertificate=True";
+
+    [JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Server)
+                             && !string.IsNullOrWhiteSpace(Database)
+                             && !string.IsNullOrWhiteSpace(PlantCode);
+}
+
 public class PdfFolderConfig
 {
+    public bool Visible { get; set; }
     public string Path { get; set; } = "";
     public int MaxIdleMinutes { get; set; } = 30;
     public int MaxBacklogCount { get; set; } = 50;

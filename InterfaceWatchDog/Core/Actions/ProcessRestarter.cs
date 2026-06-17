@@ -6,7 +6,7 @@ namespace InterfaceWatchDog.Core.Actions;
 
 public class ProcessRestarter : IProcessRestarter
 {
-    public RestartResult TryRestart(ProgramConfig config)
+    public RestartResult TryRestart(TabmachineConfig config)
     {
         if (!config.CanRestart)
         {

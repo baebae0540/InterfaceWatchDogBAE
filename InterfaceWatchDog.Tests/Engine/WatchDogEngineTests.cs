@@ -12,6 +12,7 @@ public class WatchDogEngineTests : IDisposable
     private readonly IProcessMonitor     _pm  = Substitute.For<IProcessMonitor>();
     private readonly IFileActivityMonitor _fm  = Substitute.For<IFileActivityMonitor>();
     private readonly IProcessRestarter   _pr  = Substitute.For<IProcessRestarter>();
+    private readonly IAlarmWriter        _aw  = Substitute.For<IAlarmWriter>();
 
     // ── 실제 협력자 (임시 폴더 LogWriter) ────────────────────────────────────
     private readonly string    _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -25,15 +26,12 @@ public class WatchDogEngineTests : IDisposable
 
         _config = new AppConfig
         {
-            Erweka = new ProgramConfig
+            Erweka = new ErwekaConfig
             {
-                DisplayName            = "TestErweka",
-                ProcessName            = "test-erweka",
-                ExecutablePath         = "C:\\fake\\erweka.exe",
-                MaxRestartAttempts     = 3,
-                RestartCooldownSeconds = 0   // 쿨다운 0 → 연속 호출 가능
+                DisplayName = "TestErweka",
+                ProcessName = "test-erweka"
             },
-            TabmachineIF = new ProgramConfig
+            TabmachineIF = new TabmachineConfig
             {
                 DisplayName            = "TestTab",
                 ProcessName            = "test-tab",
@@ -47,8 +45,8 @@ public class WatchDogEngineTests : IDisposable
         _fm.Check(Arg.Any<PdfFolderConfig>()).Returns(new FileActivityStatus());
     }
 
-    private WatchDogEngine CreateEngine(bool isInteractiveSession = true) =>
-        new(_config, _log, _pm, _fm, _pr, isInteractiveSession);
+    private WatchDogEngine CreateEngine(bool isInteractiveSession = true, AlarmDbConfig? alarmDbConfig = null) =>
+        new(_config, _log, _pm, _fm, _pr, _aw, alarmDbConfig, isInteractiveSession);
 
     private void BothProcessesRunning()
     {
@@ -68,7 +66,7 @@ public class WatchDogEngineTests : IDisposable
 
         engine.CheckProcesses();
 
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
@@ -84,30 +82,27 @@ public class WatchDogEngineTests : IDisposable
         statuses.Should().OnlyContain(s => s.Status == HealthStatus.Healthy);
     }
 
-    // ── 2. 프로세스 다운 → 재시작 성공 ──────────────────────────────────────
+    // ── 2. ERWEKA 다운 → 재시작 없이 알람 기록 ────────────────────────────
 
     [Fact]
-    public void CheckProcesses_WhenErwekaDown_ShouldAttemptRestart()
+    public void CheckProcesses_WhenErwekaDown_ShouldNotAttemptRestart()
     {
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
-        _pr.TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-erweka"))
-           .Returns(RestartResult.Ok(9999));
 
         var engine = CreateEngine();
         engine.CheckProcesses();
 
-        _pr.Received(1).TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-erweka"));
+        _pr.DidNotReceive().TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-erweka"));
     }
 
     [Fact]
-    public void CheckProcesses_WhenRestartSucceeds_StatusShouldBeHealthy()
+    public void CheckProcesses_WhenErwekaDown_StatusShouldBeFailed()
     {
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
-        _pr.TryRestart(Arg.Any<ProgramConfig>()).Returns(RestartResult.Ok(9999));
 
         var engine = CreateEngine();
         ProgramStatus? last = null;
@@ -116,47 +111,91 @@ public class WatchDogEngineTests : IDisposable
         engine.CheckProcesses();
 
         last.Should().NotBeNull();
-        last!.Status.Should().Be(HealthStatus.Healthy);
-        last.RestartCount.Should().Be(1);
+        last!.Status.Should().Be(HealthStatus.Failed);
     }
 
-    // ── 3. 최대 재시도 초과 → Failed ─────────────────────────────────────────
+    [Fact]
+    public void CheckProcesses_WhenErwekaDownWithAlarmDb_ShouldWriteAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+        engine.CheckProcesses();
+
+        // 비동기 Task.Run으로 실행되므로 약간의 대기
+        Thread.Sleep(200);
+        _aw.Received(1).WriteAlarmAsync(Arg.Any<string>(), "P1", Arg.Any<string>(), "test-erweka", Arg.Any<string>());
+    }
+
+    // ── 3. ERWEKA 반복 다운 → 알람 중복 방지 (1회만 Insert) ──────────────
 
     [Fact]
-    public void CheckProcesses_WhenMaxRetriesExceeded_StatusShouldBeFailed()
+    public void CheckProcesses_WhenErwekaDownRepeatedly_ShouldWriteAlarmOnlyOnce()
     {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 3003 });
-        _pr.TryRestart(Arg.Any<ProgramConfig>()).Returns(RestartResult.Fail("파일 없음"));
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
 
-        var engine = CreateEngine();
-        var erwekaStatuses = new List<ProgramStatus>();
-        engine.ProgramStatusChanged += s => { if (s.Key == "Erweka") erwekaStatuses.Add(s); };
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
 
-        // MaxRestartAttempts=3 → failures 1,2→Restarting, 3→Failed (마지막 시도)
-        // failures>=3 이후 추가 재시작 없음 — 4번째 체크부터 조기 반환
-        engine.CheckProcesses(); // failures=1, restart#1 (실패)
-        engine.CheckProcesses(); // failures=2, restart#2 (실패)
-        engine.CheckProcesses(); // failures=3, restart#3 (실패) → Failed 상태 진입
+        engine.CheckProcesses();
+        engine.CheckProcesses();
+        engine.CheckProcesses();
 
-        erwekaStatuses.Last().Status.Should().Be(HealthStatus.Failed);
-        _pr.Received(3).TryRestart(Arg.Any<ProgramConfig>());
+        Thread.Sleep(200);
+        _aw.Received(1).WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
-    // ── 4. Failed 상태에서 프로세스 복구 → Healthy 복귀 ─────────────────────
+    // ── 4. ERWEKA 복구 후 재다운 → 새 알람 Insert ──────────────────────
 
     [Fact]
-    public void CheckProcesses_WhenProcessRecoveredFromFailed_StatusShouldBeHealthy()
+    public void CheckProcesses_WhenErwekaRecoveredAndDownAgain_ShouldWriteNewAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 4004 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        // 처음: 다운
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+        engine.CheckProcesses();
+        Thread.Sleep(200);
+
+        // 복구
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 5555 });
+        engine.CheckProcesses();
+
+        // 다시 다운
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        engine.CheckProcesses();
+        Thread.Sleep(200);
+
+        _aw.Received(2).WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaRecoveredFromFailed_StatusShouldBeHealthy()
     {
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 4004 });
-        _pr.TryRestart(Arg.Any<ProgramConfig>()).Returns(RestartResult.Fail("파일 없음"));
 
-        // 처음 4번: 다운 → Failed 진입
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         var engine = CreateEngine();
-        for (int i = 0; i < 4; i++) engine.CheckProcesses();
+        engine.CheckProcesses();
 
         // 이후 프로세스 복구
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
@@ -169,6 +208,22 @@ public class WatchDogEngineTests : IDisposable
 
         recovered.Should().NotBeNull();
         recovered!.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    // ── ERWEKA: AlarmDb 미설정 시 알람 미전송 ────────────────────────────
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaDownWithoutAlarmDb_ShouldNotWriteAlarm()
+    {
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+
+        var engine = CreateEngine();
+        engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
     // ── 5. 파일 활동 경고 이벤트 전파 ────────────────────────────────────────
@@ -281,9 +336,9 @@ public class WatchDogEngineTests : IDisposable
         firstCheckEntered.Wait(TimeSpan.FromSeconds(2)).Should().BeTrue();
         engine.ReloadConfig(new AppConfig
         {
-            Erweka = new ProgramConfig { DisplayName = "새 ERWEKA" },
-            TabmachineIF = new ProgramConfig { DisplayName = "새 Tab" },
-            PdfFolder = new PdfFolderConfig { Path = "new" }
+            Erweka = new ErwekaConfig { DisplayName = "새 ERWEKA" },
+            TabmachineIF = new TabmachineConfig { DisplayName = "새 Tab" },
+            PdfFolder = new PdfFolderConfig { Path = "new", Visible = true }
         });
         releaseFirstCheck.Set();
 
@@ -327,7 +382,7 @@ public class WatchDogEngineTests : IDisposable
         erweka!.Status.Should().Be(HealthStatus.Disabled);
         erweka.IsRunning.Should().BeFalse();
         _pm.DidNotReceive().IsRunning("");
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
@@ -369,8 +424,8 @@ public class WatchDogEngineTests : IDisposable
 
         var newConfig = new AppConfig
         {
-            Erweka       = new ProgramConfig { DisplayName = "새 ERWEKA" },
-            TabmachineIF = new ProgramConfig { DisplayName = "새 Tab" }
+            Erweka       = new ErwekaConfig { DisplayName = "새 ERWEKA" },
+            TabmachineIF = new TabmachineConfig { DisplayName = "새 Tab" }
         };
         engine.ReloadConfig(newConfig);
 
@@ -379,10 +434,10 @@ public class WatchDogEngineTests : IDisposable
         tab.DisplayName.Should().Be("새 Tab");
     }
 
-    // ── 9. 서비스(세션 0) 인스턴스 — 재시작은 트레이 앱(대화형 세션)이 전담, 상태 표시만 갱신 ──
+    // ── 9. 서비스(세션 0) 인스턴스 — ERWEKA는 세션 무관 재시작 안함, Tab은 트레이만 재시작 ──
 
     [Fact]
-    public void CheckProcesses_WhenNotInteractiveSessionAndProcessDown_ShouldNotAttemptRestart()
+    public void CheckProcesses_WhenNotInteractiveSessionAndErwekaDown_ShouldNotAttemptRestart()
     {
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
@@ -391,11 +446,11 @@ public class WatchDogEngineTests : IDisposable
         var engine = CreateEngine(isInteractiveSession: false);
         engine.CheckProcesses();
 
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
-    public void CheckProcesses_WhenNotInteractiveSessionAndProcessDown_StatusShouldBeWarning()
+    public void CheckProcesses_WhenNotInteractiveSessionAndErwekaDown_StatusShouldBeFailed()
     {
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
@@ -408,12 +463,12 @@ public class WatchDogEngineTests : IDisposable
         engine.CheckProcesses();
 
         erweka.Should().NotBeNull();
-        erweka!.Status.Should().Be(HealthStatus.Warning);
+        erweka!.Status.Should().Be(HealthStatus.Failed);
         erweka.IsRunning.Should().BeFalse();
     }
 
     [Fact]
-    public void CheckProcesses_WhenNotInteractiveSessionAndProcessDown_TrackerShouldNotBeAffected()
+    public void CheckProcesses_WhenNotInteractiveSessionAndErwekaDown_ShouldNotAttemptRestartOnRepeatedChecks()
     {
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
@@ -421,10 +476,9 @@ public class WatchDogEngineTests : IDisposable
 
         var engine = CreateEngine(isInteractiveSession: false);
 
-        // 반복 호출해도 재시작 시도/실패 카운트가 누적되지 않아야 함
         for (int i = 0; i < 5; i++) engine.CheckProcesses();
 
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
@@ -457,31 +511,44 @@ public class WatchDogEngineTests : IDisposable
         engine.CheckProcesses();
 
         erweka!.Status.Should().Be(HealthStatus.Healthy);
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
-    public void CheckProcesses_WhenProcessRunningButPortNotListening_ShouldAttemptRestart()
+    public void CheckProcesses_WhenErwekaRunningButPortNotListening_ShouldNotRestart()
     {
         _config.Erweka.Port = 9100;
         BothProcessesRunning();
         _pm.IsPortListening(9100).Returns(false);
-        _pr.TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-erweka"))
-           .Returns(RestartResult.Ok(9999));
 
         var engine = CreateEngine();
         engine.CheckProcesses();
 
-        _pr.Received(1).TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-erweka"));
+        _pr.DidNotReceive().TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-erweka"));
     }
 
     [Fact]
-    public void CheckProcesses_WhenProcessRunningButPortNotListening_LogMentionsPort()
+    public void CheckProcesses_WhenErwekaRunningButPortNotListening_StatusShouldBeFailed()
     {
         _config.Erweka.Port = 9100;
         BothProcessesRunning();
         _pm.IsPortListening(9100).Returns(false);
-        _pr.TryRestart(Arg.Any<ProgramConfig>()).Returns(RestartResult.Fail("실행 파일 없음"));
+
+        var engine = CreateEngine();
+        ProgramStatus? erweka = null;
+        engine.ProgramStatusChanged += s => { if (s.Key == "Erweka") erweka = s; };
+
+        engine.CheckProcesses();
+
+        erweka!.Status.Should().Be(HealthStatus.Failed);
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaRunningButPortNotListening_LogMentionsPort()
+    {
+        _config.Erweka.Port = 9100;
+        BothProcessesRunning();
+        _pm.IsPortListening(9100).Returns(false);
 
         var engine = CreateEngine();
         engine.CheckProcesses();
@@ -491,7 +558,7 @@ public class WatchDogEngineTests : IDisposable
     }
 
     [Fact]
-    public void CheckProcesses_WhenNotInteractiveSessionAndPortNotListening_StatusShouldBeWarningWithoutRestart()
+    public void CheckProcesses_WhenNotInteractiveSessionAndErwekaPortNotListening_StatusShouldBeFailedWithoutRestart()
     {
         _config.Erweka.Port = 9100;
         BothProcessesRunning();
@@ -503,19 +570,18 @@ public class WatchDogEngineTests : IDisposable
 
         engine.CheckProcesses();
 
-        erweka!.Status.Should().Be(HealthStatus.Warning);
+        erweka!.Status.Should().Be(HealthStatus.Failed);
         erweka.IsRunning.Should().BeTrue();
-        _pr.DidNotReceive().TryRestart(Arg.Any<ProgramConfig>());
+        _pr.DidNotReceive().TryRestart(Arg.Any<TabmachineConfig>());
     }
 
     [Fact]
-    public void CheckProcesses_WhenPortConfiguredButProcessNotRunning_ShouldUseProcessDownReason()
+    public void CheckProcesses_WhenErwekaPortConfiguredButProcessNotRunning_StatusShouldBeFailed()
     {
         _config.Erweka.Port = 9100;
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 8008 });
-        _pr.TryRestart(Arg.Any<ProgramConfig>()).Returns(RestartResult.Ok(9999));
 
         var engine = CreateEngine();
         ProgramStatus? erweka = null;
@@ -523,9 +589,9 @@ public class WatchDogEngineTests : IDisposable
 
         engine.CheckProcesses();
 
-        // 프로세스 자체가 없을 때는 포트 상태와 무관하게 재시작 시도
-        _pr.Received(1).TryRestart(Arg.Any<ProgramConfig>());
-        erweka!.IsRunning.Should().BeFalse();
+        _pr.DidNotReceive().TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-erweka"));
+        erweka!.Status.Should().Be(HealthStatus.Failed);
+        erweka.IsRunning.Should().BeFalse();
     }
 
     // ── 11. TabmachineIF도 동일한 정책(대화형 세션만 재시작 전담)을 따름 (세션 0 격리 회피) ──
@@ -536,13 +602,13 @@ public class WatchDogEngineTests : IDisposable
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
         _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
-        _pr.TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-tab"))
+        _pr.TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-tab"))
            .Returns(RestartResult.Ok(2002));
 
         var engine = CreateEngine(isInteractiveSession: true);
         engine.CheckProcesses();
 
-        _pr.Received(1).TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-tab"));
+        _pr.Received(1).TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-tab"));
     }
 
     [Fact]
@@ -560,7 +626,7 @@ public class WatchDogEngineTests : IDisposable
 
         engine.CheckProcesses();
 
-        _pr.DidNotReceive().TryRestart(Arg.Is<ProgramConfig>(c => c.ProcessName == "test-tab"));
+        _pr.DidNotReceive().TryRestart(Arg.Is<TabmachineConfig>(c => c.ProcessName == "test-tab"));
         tab!.Status.Should().Be(HealthStatus.Warning);
         tab.StatusMessage.Should().Contain("트레이 앱");
     }
