@@ -183,11 +183,18 @@ public class WatchDogEngine : IDisposable
         // 쿨다운 중이면 재시작 시도 생략
         if (tracker.IsInCooldown(cfg.RestartCooldownSeconds)) return;
 
+        // 이미 MaxRestartAttempts 횟수를 소진한 경우 — 더 이상 재시작 시도 안 함
+        if (tracker.ConsecutiveFailures >= cfg.MaxRestartAttempts)
+        {
+            UpdateStatus(ref status, HealthStatus.Failed,
+                $"재시작 {cfg.MaxRestartAttempts}회 실패 — 수동 확인 필요");
+            tracker.SetCooldown(cfg.RestartCooldownSeconds);
+            return;
+        }
+
         tracker.IncrementFailure();
 
-        // 최대 재시도 횟수를 넘기면 Failed로 표시하되, 재시작 시도 자체는 쿨다운마다 계속 반복한다
-        // (이전에는 여기서 영구적으로 포기하고 매 체크마다 ERROR만 반복 기록했음)
-        var isFailed = tracker.ConsecutiveFailures >= cfg.MaxRestartAttempts;
+        var isFailed = tracker.ConsecutiveFailures >= cfg.MaxRestartAttempts;  // 마지막 시도 여부
         if (isFailed)
         {
             _log.Error(cfg.DisplayName,
