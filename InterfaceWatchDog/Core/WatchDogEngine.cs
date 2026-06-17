@@ -7,9 +7,11 @@ namespace InterfaceWatchDog.Core;
 public class WatchDogEngine : IDisposable
 {
     private AppConfig _config;
+    private AlarmDbConfig _alarmDbConfig;
     private readonly LogWriter _log;
     private readonly IProcessMonitor _processMonitor;
     private readonly IProcessRestarter _restarter;
+    private readonly IAlarmWriter _alarmWriter;
     private readonly IFileActivityMonitor _fileMonitor;
 
     private System.Threading.Timer? _erwekaTimer;
@@ -27,6 +29,7 @@ public class WatchDogEngine : IDisposable
     private ProgramStatus _erwekaStatus    = new() { Key = "Erweka",       DisplayName = "ERWEKA Export Manager" };
     private ProgramStatus _tabmachineStatus = new() { Key = "TabmachineIF", DisplayName = "TabmachineIF" };
     private FileActivityStatus _fileStatus  = new();
+    private volatile bool _erwekaAlarmSent;
 
     public event Action<ProgramStatus>?     ProgramStatusChanged;
     public event Action<FileActivityStatus>? FileStatusChanged;
@@ -39,18 +42,21 @@ public class WatchDogEngine : IDisposable
 
     // 프로덕션 생성자 — 구체 클래스를 직접 생성
     public WatchDogEngine(AppConfig config, LogWriter log, bool isInteractiveSession = true)
-        : this(config, log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter(), isInteractiveSession) { }
+        : this(config, log, new ProcessMonitor(), new FileActivityMonitor(), new ProcessRestarter(),
+               new AlarmWriter(), ConfigManager.LoadAlarmDb(), isInteractiveSession) { }
 
     // 테스트/DI 생성자 — 인터페이스 주입 (InternalsVisibleTo로 테스트 프로젝트에서 접근)
     internal WatchDogEngine(AppConfig config, LogWriter log,
         IProcessMonitor processMonitor, IFileActivityMonitor fileMonitor, IProcessRestarter restarter,
-        bool isInteractiveSession = true)
+        IAlarmWriter alarmWriter, AlarmDbConfig? alarmDbConfig = null, bool isInteractiveSession = true)
     {
         _config         = config;
+        _alarmDbConfig  = alarmDbConfig ?? new AlarmDbConfig();
         _log            = log;
         _processMonitor = processMonitor;
         _fileMonitor    = fileMonitor;
         _restarter      = restarter;
+        _alarmWriter    = alarmWriter;
         _isInteractiveSession = isInteractiveSession;
         _log.LogGenerated += _ => { };
     }
@@ -65,8 +71,9 @@ public class WatchDogEngine : IDisposable
         _tabmachineTimer = new System.Threading.Timer(_ => CheckTabmachine(), null,
             TimeSpan.Zero, TimeSpan.FromSeconds(_config.TabmachineIF.ProcessCheckSeconds));
 
-        _fileTimer = new System.Threading.Timer(_ => CheckFileActivity(), null,
-            TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(_config.PdfFolder.FileActivityCheckMinutes));
+        if (_config.PdfFolder.Visible)
+            _fileTimer = new System.Threading.Timer(_ => CheckFileActivity(), null,
+                TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(_config.PdfFolder.FileActivityCheckMinutes));
     }
 
     public void Stop()
@@ -75,6 +82,11 @@ public class WatchDogEngine : IDisposable
         _tabmachineTimer?.Dispose();
         _fileTimer?.Dispose();
         _log.Info("Engine", "WatchDog 감시 중지");
+    }
+
+    public void ReloadAlarmDbConfig(AlarmDbConfig alarmDbConfig)
+    {
+        _alarmDbConfig = alarmDbConfig;
     }
 
     public void ReloadConfig(AppConfig config)
@@ -91,9 +103,25 @@ public class WatchDogEngine : IDisposable
 
         _erwekaTimer?.Change(erwekaInterval, erwekaInterval);
         _tabmachineTimer?.Change(tabInterval, tabInterval);
-        _fileTimer?.Change(fileInterval, fileInterval);
+
         Interlocked.Increment(ref _fileConfigVersion);
-        QueueFileActivityCheck();
+
+        if (config.PdfFolder.Visible && _fileTimer == null)
+        {
+            _fileTimer = new System.Threading.Timer(_ => CheckFileActivity(), null,
+                fileInterval, fileInterval);
+            QueueFileActivityCheck();
+        }
+        else if (!config.PdfFolder.Visible && _fileTimer != null)
+        {
+            _fileTimer.Dispose();
+            _fileTimer = null;
+        }
+        else if (_fileTimer != null)
+        {
+            _fileTimer.Change(fileInterval, fileInterval);
+            QueueFileActivityCheck();
+        }
     }
 
     public (ProgramStatus erweka, ProgramStatus tabmachine, FileActivityStatus file) GetCurrentStatus()
@@ -102,7 +130,7 @@ public class WatchDogEngine : IDisposable
     public bool CheckErwekaRunningNow()
         => !string.IsNullOrWhiteSpace(_config.Erweka.ProcessName)
            && _processMonitor.IsRunning(_config.Erweka.ProcessName,
-                                        _config.Erweka.ExecutablePath,
+                                        "",
                                         _config.Erweka.Arguments)
            && (_config.Erweka.Port <= 0 || _processMonitor.IsPortListening(_config.Erweka.Port));
 
@@ -117,14 +145,13 @@ public class WatchDogEngine : IDisposable
 
     // internal: 타이머 콜백 (각 프로그램별 독립 주기)
     internal void CheckErweka()
-        => CheckProgram("Erweka", _config.Erweka, ref _erwekaStatus);
+        => CheckErwekaProgram(_config.Erweka, ref _erwekaStatus);
 
     internal void CheckTabmachine()
         => CheckProgram("TabmachineIF", _config.TabmachineIF, ref _tabmachineStatus);
 
-    private void CheckProgram(string key, ProgramConfig cfg, ref ProgramStatus status)
+    private void CheckProgram(string key, TabmachineConfig cfg, ref ProgramStatus status)
     {
-        // 프로세스 이름 미설정 — 이 사이트에서는 감시 대상이 아님 (예: ERWEKA 미사용 현장)
         if (string.IsNullOrWhiteSpace(cfg.ProcessName))
         {
             if (status.Status != HealthStatus.Disabled)
@@ -138,40 +165,24 @@ public class WatchDogEngine : IDisposable
 
         var tracker   = _trackers[key];
         var isRunning = _processMonitor.IsRunning(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments);
-
-        // 포트 감시 설정 시: 프로세스는 살아있어도 TCP LISTEN 상태가 아니면 장애로 간주
-        // (TCP 서버 프로그램이 행(hang)되어 더 이상 요청을 받지 못하는 상태 검출용)
-        var portOk = cfg.Port <= 0 || _processMonitor.IsPortListening(cfg.Port);
-
-        // 이 인스턴스가 이 프로그램의 재시작을 전담하는지 여부
-        // ERWEKA, TabmachineIF 모두 재시작 후 사용자가 화면에서 설정/시작 버튼을
-        // 눌러야 하므로, 항상 대화형 세션(트레이 앱)만 재시작을 전담한다.
-        // (서비스가 재시작하면 세션 0 격리로 인해 새 창이 사용자 화면에 보이지 않음)
         var shouldRestart = _isInteractiveSession;
 
-        // 정상: 프로세스 실행 중 + (포트 감시 미설정 또는 포트 LISTEN 정상) — Failed 상태에서도 복구
-        if (isRunning && portOk)
+        if (isRunning)
         {
             status.IsRunning      = true;
             status.LastSeenAlive  = DateTime.Now;
 
-            // 재시작 비전담 인스턴스(트레이 등)는 복구 로그를 남기지 않음 — 전담 인스턴스 쪽에서 이미 기록함
             if (status.Status != HealthStatus.Healthy && shouldRestart)
                 _log.Info(cfg.DisplayName, "프로세스 정상 감지 (복구됨)");
 
-            var portInfo = cfg.Port > 0 ? $", 포트 {cfg.Port} LISTEN" : "";
             UpdateStatus(ref status, HealthStatus.Healthy,
-                $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments)?.Pid}{portInfo})");
+                $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments)?.Pid})");
             tracker.ResetFailures();
             return;
         }
 
-        status.IsRunning = isRunning;
-
-        // 장애 원인 — 프로세스 자체가 없는지, 프로세스는 있으나 포트가 응답하지 않는지 구분
-        var downReason = isRunning
-            ? $"포트 {cfg.Port} 응답 없음 (TCP LISTEN 아님)"
-            : "프로세스 미감지";
+        status.IsRunning = false;
+        var downReason = "프로세스 미감지";
 
         // 재시작 비전담 인스턴스(서비스 등) — 상태 표시만 갱신하고 재시작/로그/트래커는 건드리지 않음
         if (!shouldRestart)
@@ -226,6 +237,81 @@ public class WatchDogEngine : IDisposable
             _log.Error(cfg.DisplayName, $"재시작 실패: {result.Message}");
             UpdateStatus(ref status, isFailed ? HealthStatus.Failed : HealthStatus.Warning,
                 $"재시작 실패: {result.Message}");
+        }
+    }
+
+    private void CheckErwekaProgram(ErwekaConfig cfg, ref ProgramStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(cfg.ProcessName))
+        {
+            if (status.Status != HealthStatus.Disabled)
+            {
+                status.IsRunning = false;
+                UpdateStatus(ref status, HealthStatus.Disabled, "프로세스 이름 미설정 — 감시 비활성화");
+            }
+            return;
+        }
+
+        var isRunning = _processMonitor.IsRunning(cfg.ProcessName, "", cfg.Arguments);
+        var portOk = cfg.Port <= 0 || _processMonitor.IsPortListening(cfg.Port);
+
+        if (isRunning && portOk)
+        {
+            status.IsRunning     = true;
+            status.LastSeenAlive = DateTime.Now;
+
+            if (status.Status != HealthStatus.Healthy)
+                _log.Info(cfg.DisplayName, "프로세스 정상 감지 (복구됨)");
+
+            var portInfo = cfg.Port > 0 ? $", 포트 {cfg.Port} LISTEN" : "";
+            UpdateStatus(ref status, HealthStatus.Healthy,
+                $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, "", cfg.Arguments)?.Pid}{portInfo})");
+            _erwekaAlarmSent = false;
+            return;
+        }
+
+        status.IsRunning = isRunning;
+
+        var downReason = isRunning
+            ? $"포트 {cfg.Port} 응답 없음 (TCP LISTEN 아님)"
+            : "프로세스 미감지";
+
+        UpdateStatus(ref status, HealthStatus.Failed, $"{downReason} — 알람 전송됨");
+
+        if (!_erwekaAlarmSent)
+        {
+            _erwekaAlarmSent = true;
+            _log.Error(cfg.DisplayName, $"{downReason} — 알람 기록");
+
+            if (_alarmDbConfig.IsConfigured && _config.DbConnectionVerified)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var success = await _alarmWriter.WriteAlarmAsync(
+                            _alarmDbConfig.ConnectionString,
+                            _alarmDbConfig.PlantCode,
+                            $"{cfg.DisplayName} {downReason}",
+                            cfg.ProcessName,
+                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                        if (success)
+                        {
+                            _erwekaStatus.AlarmCount++;
+                            _log.Info(cfg.DisplayName, "SYS_ALARM 테이블에 알람 기록 완료");
+                        }
+                        else
+                        {
+                            _log.Error(cfg.DisplayName, "SYS_ALARM 알람 기록 실패");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(cfg.DisplayName, $"SYS_ALARM 알람 기록 중 예외: {ex.Message}");
+                    }
+                });
+            }
         }
     }
 

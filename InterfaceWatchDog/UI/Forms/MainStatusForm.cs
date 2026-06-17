@@ -13,11 +13,11 @@ public class MainStatusForm : Form
     private StatusCard _erwekaCard = null!;
     private StatusCard _tabCard    = null!;
 
-    private Panel  _pdfStatusBadge   = null!;
-    private Label  _pdfStatusText    = null!;
-    private Label  _pdfCountVal      = null!;
-    private Label  _pdfLastVal       = null!;
-    private Label  _pdfFolderVal     = null!;
+    private Panel?  _pdfStatusBadge;
+    private Label?  _pdfStatusText;
+    private Label?  _pdfCountVal;
+    private Label?  _pdfLastVal;
+    private Label?  _pdfFolderVal;
 
     private ListBox        _logList       = null!;
     private Label          _lastCheckLbl  = null!;
@@ -95,80 +95,82 @@ public class MainStatusForm : Form
         cardLayout.Controls.Add(_tabCard,    1, 0);
         cardOuter.Controls.Add(cardLayout);
 
-        // ── PDF 폴더 상태 패널 ────────────────────────────────────────────────
-        var pdfOuter = new Panel
+        // ── PDF 폴더 상태 패널 (Visible일 때만 생성) ─────────────────────────
+        Panel? pdfOuter = null;
+        if (_config.PdfFolder.Visible)
         {
-            Dock      = DockStyle.Top,
-            Height    = 170,                              // 높이 확대 (텍스트 잘림 방지)
-            Padding   = new Padding(16, 10, 16, 10),
-            BackColor = Color.White
-        };
-        var pdfDivider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Color.FromArgb(220, 224, 232) };
+            pdfOuter = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 170,
+                Padding   = new Padding(16, 10, 16, 10),
+                BackColor = Color.White
+            };
+            var pdfDivider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Color.FromArgb(220, 224, 232) };
 
-        var pdfLayout = new TableLayoutPanel
-        {
-            Dock        = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount    = 4,
-            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
-        };
-        pdfLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 175));  // 열 너비 확대
-        pdfLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 4; i++)
-            pdfLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));     // 행 높이 확대 (텍스트 잘림 방지)
+            var pdfLayout = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount    = 4,
+                CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+            };
+            pdfLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 175));
+            pdfLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            for (int i = 0; i < 4; i++)
+                pdfLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
-        Label MakePdfLabel(string t) => new Label
-        {
-            Text      = t,
-            Dock      = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font      = new Font("맑은 고딕", 9f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(80, 90, 110)
-        };
-        Label MakePdfVal(string t = "") => new Label
-        {
-            Text      = t,
-            Dock      = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font      = new Font("맑은 고딕", 9f),
-            ForeColor = Color.FromArgb(50, 55, 70)
-        };
+            Label MakePdfLabel(string t) => new Label
+            {
+                Text      = t,
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font      = new Font("맑은 고딕", 9f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(80, 90, 110)
+            };
+            Label MakePdfVal(string t = "") => new Label
+            {
+                Text      = t,
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font      = new Font("맑은 고딕", 9f),
+                ForeColor = Color.FromArgb(50, 55, 70)
+            };
 
-        // 행 0: 섹션 타이틀 + 상태 뱃지
-        var pdfTitleLbl = MakePdfLabel("PDF 폴더 감시");
-        pdfTitleLbl.Font = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
-        pdfTitleLbl.ForeColor = Color.FromArgb(40, 50, 70);
+            var pdfTitleLbl = MakePdfLabel("PDF 폴더 감시");
+            pdfTitleLbl.Font = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
+            pdfTitleLbl.ForeColor = Color.FromArgb(40, 50, 70);
 
-        _pdfStatusBadge = new Panel
-        {
-            Dock      = DockStyle.Fill,
-            Padding   = new Padding(0, 4, 0, 4)
-        };
-        _pdfStatusText = new Label
-        {
-            Dock      = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font      = new Font("맑은 고딕", 9f),
-            ForeColor = Color.Gray
-        };
-        _pdfStatusBadge.Controls.Add(_pdfStatusText);
+            _pdfStatusBadge = new Panel
+            {
+                Dock      = DockStyle.Fill,
+                Padding   = new Padding(0, 4, 0, 4)
+            };
+            _pdfStatusText = new Label
+            {
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font      = new Font("맑은 고딕", 9f),
+                ForeColor = Color.Gray
+            };
+            _pdfStatusBadge.Controls.Add(_pdfStatusText);
 
-        // 행 1–3: 상세 정보
-        _pdfFolderVal = MakePdfVal();
-        _pdfCountVal  = MakePdfVal();
-        _pdfLastVal   = MakePdfVal();
+            _pdfFolderVal = MakePdfVal();
+            _pdfCountVal  = MakePdfVal();
+            _pdfLastVal   = MakePdfVal();
 
-        pdfLayout.Controls.Add(pdfTitleLbl,     0, 0);
-        pdfLayout.Controls.Add(_pdfStatusBadge, 1, 0);
-        pdfLayout.Controls.Add(MakePdfLabel("폴더 경로"),    0, 1);
-        pdfLayout.Controls.Add(_pdfFolderVal,               1, 1);
-        pdfLayout.Controls.Add(MakePdfLabel("현재 파일 수"), 0, 2);
-        pdfLayout.Controls.Add(_pdfCountVal,                1, 2);
-        pdfLayout.Controls.Add(MakePdfLabel("최신 파일"),   0, 3);
-        pdfLayout.Controls.Add(_pdfLastVal,                 1, 3);
+            pdfLayout.Controls.Add(pdfTitleLbl,     0, 0);
+            pdfLayout.Controls.Add(_pdfStatusBadge, 1, 0);
+            pdfLayout.Controls.Add(MakePdfLabel("폴더 경로"),    0, 1);
+            pdfLayout.Controls.Add(_pdfFolderVal,               1, 1);
+            pdfLayout.Controls.Add(MakePdfLabel("현재 파일 수"), 0, 2);
+            pdfLayout.Controls.Add(_pdfCountVal,                1, 2);
+            pdfLayout.Controls.Add(MakePdfLabel("최신 파일"),   0, 3);
+            pdfLayout.Controls.Add(_pdfLastVal,                 1, 3);
 
-        pdfOuter.Controls.Add(pdfLayout);
-        pdfOuter.Controls.Add(pdfDivider);
+            pdfOuter.Controls.Add(pdfLayout);
+            pdfOuter.Controls.Add(pdfDivider);
+        }
 
         // ── 실시간 로그 ───────────────────────────────────────────────────────
         var logOuter = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 8, 14, 6) };
@@ -248,7 +250,8 @@ public class MainStatusForm : Form
 
         // ── 조립 ─────────────────────────────────────────────────────────────
         Controls.Add(logOuter);
-        Controls.Add(pdfOuter);
+        if (pdfOuter != null)
+            Controls.Add(pdfOuter);
         Controls.Add(cardOuter);
         Controls.Add(header);
         Controls.Add(bottomBar);
@@ -279,11 +282,14 @@ public class MainStatusForm : Form
             if (IsDisposed) return;
             try { Invoke(() => UpdateCard(s)); } catch { }
         };
-        _engine.FileStatusChanged += fs =>
+        if (_config.PdfFolder.Visible)
         {
-            if (IsDisposed) return;
-            try { Invoke(() => UpdatePdf(fs)); } catch { }
-        };
+            _engine.FileStatusChanged += fs =>
+            {
+                if (IsDisposed) return;
+                try { Invoke(() => UpdatePdf(fs)); } catch { }
+            };
+        }
         _log.LogGenerated += e =>
         {
             if (IsDisposed) return;
@@ -296,7 +302,8 @@ public class MainStatusForm : Form
         var (e, t, f) = _engine.GetCurrentStatus();
         UpdateCard(e);
         UpdateCard(t);
-        UpdatePdf(f);
+        if (_config.PdfFolder.Visible)
+            UpdatePdf(f);
     }
 
     private void UpdateCard(ProgramStatus s)
@@ -307,6 +314,10 @@ public class MainStatusForm : Form
 
     private void UpdatePdf(FileActivityStatus s)
     {
+        if (_pdfFolderVal == null || _pdfStatusText == null ||
+            _pdfCountVal == null || _pdfLastVal == null)
+            return;
+
         _pdfFolderVal.Text = _config.PdfFolder.Path;
 
         if (!s.IsFolderConfigured)
@@ -353,7 +364,8 @@ public class MainStatusForm : Form
             var newCfg = ConfigManager.Load();
             _config = newCfg;
             _engine.ReloadConfig(newCfg);
-            _pdfFolderVal.Text = newCfg.PdfFolder.Path;
+            if (_pdfFolderVal != null)
+                _pdfFolderVal.Text = newCfg.PdfFolder.Path;
             _log.Info("UI", "설정 변경 — 감시 엔진 재적용됨");
         }
     }
@@ -453,9 +465,13 @@ internal class StatusCard : Panel
     public void Update(ProgramStatus s)
     {
         _dot.ForeColor        = s.StatusColor;
-        _statusText.Text      = s.StatusText;
+        _statusText.Text      = s.Key == "Erweka" && s.Status == HealthStatus.Failed
+            ? "프로세스 중지"
+            : s.StatusText;
         _statusText.ForeColor = s.StatusColor;
-        _restartLbl.Text      = $"재시작: {s.RestartCount}회";
+        _restartLbl.Text      = s.Key == "Erweka"
+            ? $"알람: {s.AlarmCount}건"
+            : $"재시작: {s.RestartCount}회";
         _lastSeenLbl.Text     = s.LastSeenAlive.HasValue
             ? $"마지막 감지: {s.LastSeenAlive.Value:HH:mm:ss}"
             : "마지막 감지: —";

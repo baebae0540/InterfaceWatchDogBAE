@@ -4,5 +4,5 @@ namespace InterfaceWatchDog.Core.Actions;
 
 public interface IProcessRestarter
 {
-    RestartResult TryRestart(ProgramConfig config);
+    RestartResult TryRestart(TabmachineConfig config);
 }

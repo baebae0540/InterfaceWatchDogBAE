@@ -24,13 +24,12 @@ public class ConfigManagerIntegrationTests : IDisposable
     {
         var config = new AppConfig
         {
-            Erweka = new ProgramConfig
+            Erweka = new ErwekaConfig
             {
                 DisplayName = "통합테스트ERWEKA", ProcessName = "erweka_proc",
-                ExecutablePath = @"C:\test\erweka.exe", Arguments = "-x",
-                MaxRestartAttempts = 5, RestartCooldownSeconds = 45, ProcessCheckSeconds = 10
+                Arguments = "-x", ProcessCheckSeconds = 10
             },
-            TabmachineIF = new ProgramConfig
+            TabmachineIF = new TabmachineConfig
             {
                 DisplayName = "통합테스트Tab", ProcessName = "tab_proc",
                 ExecutablePath = @"C:\test\tab.exe",

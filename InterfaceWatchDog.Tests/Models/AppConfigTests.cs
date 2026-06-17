@@ -14,26 +14,26 @@ public class AppConfigTests : IDisposable
         File.WriteAllText(_tempExe, "");
     }
 
-    // ── ProgramConfig.CanRestart ──────────────────────────────────────────────
+    // ── TabmachineConfig.CanRestart ─────────────────────────────────────────
 
     [Fact]
     public void CanRestart_WhenFileExists_ShouldBeTrue()
     {
-        var cfg = new ProgramConfig { ExecutablePath = _tempExe };
+        var cfg = new TabmachineConfig { ExecutablePath = _tempExe };
         cfg.CanRestart.Should().BeTrue();
     }
 
     [Fact]
     public void CanRestart_WhenFileNotExists_ShouldBeFalse()
     {
-        var cfg = new ProgramConfig { ExecutablePath = Path.Combine(_tempDir, "notexist.exe") };
+        var cfg = new TabmachineConfig { ExecutablePath = Path.Combine(_tempDir, "notexist.exe") };
         cfg.CanRestart.Should().BeFalse();
     }
 
     [Fact]
     public void CanRestart_WhenPathEmpty_ShouldBeFalse()
     {
-        var cfg = new ProgramConfig { ExecutablePath = "" };
+        var cfg = new TabmachineConfig { ExecutablePath = "" };
         cfg.CanRestart.Should().BeFalse();
     }
 

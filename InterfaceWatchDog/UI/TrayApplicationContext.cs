@@ -14,6 +14,7 @@ public class TrayApplicationContext : ApplicationContext
     private MainStatusForm? _statusForm;
 
     private HealthStatus _worstStatus = HealthStatus.Unknown;
+    private readonly Dictionary<string, HealthStatus> _prevStatus = new();
     private bool _disposed;
 
     public TrayApplicationContext(WatchDogEngine engine, LogWriter log, AppConfig config)
@@ -72,7 +73,6 @@ public class TrayApplicationContext : ApplicationContext
 
     private void OnProgramStatusChanged(ProgramStatus status)
     {
-        // 두 프로그램 중 가장 나쁜 상태를 트레이 아이콘에 반영 (감시 안 함은 제외)
         var (erweka, tab, _) = _engine.GetCurrentStatus();
         _worstStatus = Severity(erweka.Status) >= Severity(tab.Status) ? erweka.Status : tab.Status;
 
@@ -82,13 +82,18 @@ public class TrayApplicationContext : ApplicationContext
         _trayIcon.Icon = CreateTrayIcon(_worstStatus);
         _trayIcon.Text = $"InterfaceWatchDog - {WorstStatusText()}";
 
-        // 실패 상태일 때 풍선 알림
-        if (_worstStatus == HealthStatus.Failed)
+        _prevStatus.TryGetValue(status.Key, out var prev);
+        _prevStatus[status.Key] = status.Status;
+        if (status.Status == prev) return;
+
+        if (status.Status == HealthStatus.Failed)
         {
-            _trayIcon.ShowBalloonTip(5000, "InterfaceWatchDog 경고",
-                $"{status.DisplayName} 복구 실패 — 수동 확인 필요", ToolTipIcon.Error);
+            var msg = status.Key == "Erweka"
+                ? $"{status.DisplayName} 프로세스 중지됨 — 수동 확인 필요"
+                : $"{status.DisplayName} 복구 실패 — 수동 확인 필요";
+            _trayIcon.ShowBalloonTip(5000, "InterfaceWatchDog 경고", msg, ToolTipIcon.Error);
         }
-        else if (_worstStatus == HealthStatus.Warning)
+        else if (status.Status is HealthStatus.Warning or HealthStatus.Restarting)
         {
             _trayIcon.ShowBalloonTip(3000, "InterfaceWatchDog",
                 $"{status.DisplayName} 이상 감지", ToolTipIcon.Warning);
@@ -100,7 +105,7 @@ public class TrayApplicationContext : ApplicationContext
         HealthStatus.Healthy => "정상",
         HealthStatus.Warning => "경고",
         HealthStatus.Restarting => "재시작 중",
-        HealthStatus.Failed => "복구 실패",
+        HealthStatus.Failed => "장애 발생",
         HealthStatus.Disabled => "감시 안함",
         _ => "감시 중"
     };
