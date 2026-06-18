@@ -201,7 +201,6 @@ public class TrayApplicationContext : ApplicationContext
         Application.Exit();
     }
 
-    // 트레이 아이콘을 GDI+로 동적 생성
     private static Icon CreateTrayIcon(HealthStatus status)
     {
         var color = status switch
@@ -217,8 +216,49 @@ public class TrayApplicationContext : ApplicationContext
         using var g = Graphics.FromImage(bitmap);
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
+
+        using var shieldPath = new System.Drawing.Drawing2D.GraphicsPath();
+        shieldPath.AddArc(1, 1, 5, 5, 180, 90);
+        shieldPath.AddArc(10, 1, 5, 5, 270, 90);
+        shieldPath.AddLine(15, 3, 15, 9);
+        shieldPath.AddLine(15, 9, 8, 15);
+        shieldPath.AddLine(8, 15, 1, 9);
+        shieldPath.AddLine(1, 9, 1, 3);
+        shieldPath.CloseFigure();
+
         using var brush = new SolidBrush(color);
-        g.FillEllipse(brush, 1, 1, 14, 14);
+        g.FillPath(brush, shieldPath);
+
+        using var pen = new Pen(Color.White, 1.6f)
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+        };
+
+        switch (status)
+        {
+            case HealthStatus.Healthy:
+                g.DrawLine(pen, 5, 8, 7, 10);
+                g.DrawLine(pen, 7, 10, 11, 5);
+                break;
+            case HealthStatus.Warning:
+                g.DrawLine(pen, 8, 4, 8, 8);
+                g.FillEllipse(Brushes.White, 7, 10, 2, 2);
+                break;
+            case HealthStatus.Restarting:
+                g.DrawArc(pen, 5, 4, 6, 6, 220, 260);
+                g.DrawLine(pen, 5, 4, 7, 5);
+                g.DrawLine(pen, 5, 4, 5, 6);
+                break;
+            case HealthStatus.Failed:
+                g.DrawLine(pen, 5, 5, 11, 11);
+                g.DrawLine(pen, 11, 5, 5, 11);
+                break;
+            default:
+                g.FillEllipse(Brushes.White, 7, 10, 2, 2);
+                break;
+        }
 
         var hIcon = bitmap.GetHicon();
         var icon = (Icon)Icon.FromHandle(hIcon).Clone();
