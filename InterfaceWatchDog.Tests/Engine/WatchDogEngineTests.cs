@@ -697,5 +697,137 @@ public class WatchDogEngineTests : IDisposable
         engine.GetCurrentStatus().erweka.Status.Should().Be(HealthStatus.Unknown);
     }
 
+    // ── 13. TabmachineIF 재시작 최종 실패 시 SYS_ALARM 기록 ─────────────────
+
+    [Fact]
+    public void CheckProcesses_WhenTabRestartExhausted_ShouldWriteAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+        _pr.TryRestart(Arg.Any<TabmachineConfig>()).Returns(RestartResult.Fail("crash"));
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts; i++)
+            engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.Received(1).WriteAlarmAsync(
+            Arg.Any<string>(), "P1",
+            Arg.Is<string>(s => s.Contains("TabmachineIF") || s.Contains("TestTab")),
+            "test-tab", Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenTabRestartExhaustedRepeatedly_ShouldWriteAlarmOnlyOnce()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+        _pr.TryRestart(Arg.Any<TabmachineConfig>()).Returns(RestartResult.Fail("crash"));
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts + 3; i++)
+            engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.Received(1).WriteAlarmAsync(
+            Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Is<string>(s => s.Contains("TabmachineIF") || s.Contains("TestTab")),
+            "test-tab", Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenTabRecoveredAndFailedAgain_ShouldWriteNewAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
+        _pr.TryRestart(Arg.Any<TabmachineConfig>()).Returns(RestartResult.Fail("crash"));
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+
+        // 1차 실패
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts; i++)
+            engine.CheckProcesses();
+        Thread.Sleep(200);
+
+        // 복구
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 9009 });
+        engine.CheckProcesses();
+
+        // 2차 실패
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts; i++)
+            engine.CheckProcesses();
+        Thread.Sleep(200);
+
+        _aw.Received(2).WriteAlarmAsync(
+            Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Is<string>(s => s.Contains("TabmachineIF") || s.Contains("TestTab")),
+            "test-tab", Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenTabRestartExhaustedWithoutAlarmDb_ShouldNotWriteAlarm()
+    {
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+        _pr.TryRestart(Arg.Any<TabmachineConfig>()).Returns(RestartResult.Fail("crash"));
+
+        var engine = CreateEngine();
+
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts; i++)
+            engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.DidNotReceive().WriteAlarmAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), "test-tab", Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenTabLastRestartSucceeds_ShouldNotWriteAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 1001 });
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(false);
+
+        var callCount = 0;
+        _pr.TryRestart(Arg.Any<TabmachineConfig>()).Returns(_ =>
+        {
+            callCount++;
+            return callCount >= _config.TabmachineIF.MaxRestartAttempts
+                ? RestartResult.Ok(5005)
+                : RestartResult.Fail("crash");
+        });
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+
+        for (int i = 0; i < _config.TabmachineIF.MaxRestartAttempts; i++)
+            engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.DidNotReceive().WriteAlarmAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), "test-tab", Arg.Any<string>());
+    }
+
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 }
