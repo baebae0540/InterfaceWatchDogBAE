@@ -2,7 +2,7 @@
 
 ERWEKA Export Manager와 TabmachineIF 인터페이스 프로세스를 실시간으로 감시하고, 장애 발생 시 자동 재시작 및 알람을 제공하는 Windows 모니터링 프로그램입니다.
 
-- **버전**: v1.2.1
+- **버전**: v1.3.0
 - **플랫폼**: .NET 8.0 / Windows Forms / win-x64
 - **배포**: 단일 실행 파일 (Self-Contained)
 
@@ -156,7 +156,7 @@ dotnet publish InterfaceWatchDog/InterfaceWatchDog.csproj `
 .\build_installer.ps1
 ```
 
-`Installer/Output/` 폴더에 `InterfaceWatchDog_Setup_v1.2.1.exe`가 생성됩니다.
+`Installer/Output/` 폴더에 `InterfaceWatchDog_Setup_v1.3.0.exe`가 생성됩니다.
 
 ### 패치 빌드
 

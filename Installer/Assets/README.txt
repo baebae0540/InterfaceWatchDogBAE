@@ -1,4 +1,4 @@
-InterfaceWatchDog v1.2.1
+InterfaceWatchDog v1.3.0
 ERWEKA / TabmachineIF 인터페이스 감시 시스템
 
 ■ 주요 기능
