@@ -12,9 +12,8 @@ if (File.Exists(outputPath))
     try { using var _ = File.Open(outputPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
     catch (IOException)
     {
-        fileName = $"InterfaceWatchDog_사용법_{DateTime.Now:HHmmss}.pptx";
-        outputPath = Path.Combine(outputDir, fileName);
-        Console.WriteLine($"기존 파일이 사용 중 — {fileName}으로 생성합니다.");
+        Console.Error.WriteLine($"오류: {fileName} 파일이 다른 프로세스에서 사용 중입니다. 파일을 닫고 다시 실행하세요.");
+        return 1;
     }
 }
 
