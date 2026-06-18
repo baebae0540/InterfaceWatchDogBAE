@@ -156,7 +156,7 @@ dotnet publish InterfaceWatchDog/InterfaceWatchDog.csproj `
 .\build_installer.ps1
 ```
 
-`Installer/Output/` 폴더에 `InterfaceWatchDog_Setup_v1.2.0.exe`가 생성됩니다.
+`Installer/Output/` 폴더에 `InterfaceWatchDog_Setup_v1.2.1.exe`가 생성됩니다.
 
 ### 패치 빌드
 
