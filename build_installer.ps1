@@ -122,6 +122,9 @@ if ($isccPaths.Count -eq 0) {
 $iscc = $isccPaths[0]
 $issFile = Join-Path $InstallerDir "setup.iss"
 
+if (Test-Path $OutputDir) {
+    Remove-Item "$OutputDir\*.exe" -Force
+}
 New-Item -ItemType Directory -Force $OutputDir | Out-Null
 
 & $iscc $issFile "/DMyAppVersion=$Version"
