@@ -30,6 +30,7 @@ public class WatchDogEngine : IDisposable
     private ProgramStatus _tabmachineStatus = new() { Key = "TabmachineIF", DisplayName = "TabmachineIF" };
     private FileActivityStatus _fileStatus  = new();
     private volatile bool _erwekaAlarmSent;
+    private volatile bool _tabAlarmSent;
 
     public event Action<ProgramStatus>?     ProgramStatusChanged;
     public event Action<FileActivityStatus>? FileStatusChanged;
@@ -177,6 +178,7 @@ public class WatchDogEngine : IDisposable
 
             UpdateStatus(ref status, HealthStatus.Healthy,
                 $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, cfg.ExecutablePath, cfg.Arguments)?.Pid})");
+            _tabAlarmSent = false;
             tracker.ResetFailures();
             return;
         }
@@ -237,6 +239,43 @@ public class WatchDogEngine : IDisposable
             _log.Error(cfg.DisplayName, $"재시작 실패: {result.Message}");
             UpdateStatus(ref status, isFailed ? HealthStatus.Failed : HealthStatus.Warning,
                 $"재시작 실패: {result.Message}");
+
+            if (isFailed && !_tabAlarmSent)
+            {
+                _tabAlarmSent = true;
+                _log.Error(cfg.DisplayName, $"재시작 {cfg.MaxRestartAttempts}회 실패 — 알람 기록");
+
+                if (_alarmDbConfig.IsConfigured && _config.DbConnectionVerified)
+                {
+                    var alarmContent = $"{cfg.DisplayName} 재시작 {cfg.MaxRestartAttempts}회 실패";
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var success = await _alarmWriter.WriteAlarmAsync(
+                                _alarmDbConfig.ConnectionString,
+                                _alarmDbConfig.PlantCode,
+                                alarmContent,
+                                cfg.ProcessName,
+                                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                            if (success)
+                            {
+                                _tabmachineStatus.AlarmCount++;
+                                _log.Info(cfg.DisplayName, "SYS_ALARM 테이블에 알람 기록 완료");
+                            }
+                            else
+                            {
+                                _log.Error(cfg.DisplayName, "SYS_ALARM 알람 기록 실패");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Error(cfg.DisplayName, $"SYS_ALARM 알람 기록 중 예외: {ex.Message}");
+                        }
+                    });
+                }
+            }
         }
     }
 
