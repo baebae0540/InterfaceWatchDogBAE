@@ -97,7 +97,6 @@ public class WatchDogEngine : IDisposable
         _tabmachineStatus.DisplayName = config.TabmachineIF.DisplayName;
 
         // 감시 주기 변경을 실행 중인 타이머에도 즉시 반영
-        // (변경 전에는 _config만 갱신되고 타이머는 Start() 시점 주기로 계속 동작하던 버그)
         var erwekaInterval = TimeSpan.FromSeconds(config.Erweka.ProcessCheckSeconds);
         var tabInterval    = TimeSpan.FromSeconds(config.TabmachineIF.ProcessCheckSeconds);
         var fileInterval   = TimeSpan.FromMinutes(config.PdfFolder.FileActivityCheckMinutes);

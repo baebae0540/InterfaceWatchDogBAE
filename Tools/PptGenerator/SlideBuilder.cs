@@ -401,6 +401,43 @@ public class SlideBuilder
             new D.Run(runProps, new D.Text(text)));
     }
 
+    public static void AddNotes(SlidePart slidePart, string notesText)
+    {
+        var notesSlidePart = slidePart.AddNewPart<NotesSlidePart>();
+
+        var body = new P.TextBody(
+            new D.BodyProperties(),
+            new D.ListStyle());
+
+        foreach (var line in notesText.Split('\n'))
+        {
+            body.Append(new D.Paragraph(
+                new D.Run(
+                    new D.RunProperties { Language = "ko-KR", FontSize = 1200 },
+                    new D.Text(line))));
+        }
+
+        var notesShape = new P.Shape(
+            new P.NonVisualShapeProperties(
+                new P.NonVisualDrawingProperties { Id = 2, Name = "Notes Placeholder" },
+                new P.NonVisualShapeDrawingProperties(new D.ShapeLocks { NoGrouping = true }),
+                new ApplicationNonVisualDrawingProperties(
+                    new P.PlaceholderShape { Type = P.PlaceholderValues.Body, Index = 1 })),
+            new P.ShapeProperties(),
+            body);
+
+        notesSlidePart.NotesSlide = new P.NotesSlide(
+            new CommonSlideData(new ShapeTree(
+                new P.NonVisualGroupShapeProperties(
+                    new P.NonVisualDrawingProperties { Id = 1, Name = "" },
+                    new P.NonVisualGroupShapeDrawingProperties(),
+                    new ApplicationNonVisualDrawingProperties()),
+                new GroupShapeProperties(new D.TransformGroup()),
+                notesShape)));
+    }
+
     private static uint _shapeIdCounter = 2;
     private static uint GetNextShapeId() => _shapeIdCounter++;
+
+    public static void ResetShapeIdCounter() => _shapeIdCounter = 2;
 }
