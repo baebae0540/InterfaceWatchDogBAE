@@ -1,6 +1,6 @@
 # InterfaceWatchDog 개발자 인수인계 문서
 
-> **버전**: v1.3.0 | **플랫폼**: .NET 8.0 / Windows Forms / win-x64 | **작성일**: 2026-06-22
+> **버전**: v1.4.0 | **플랫폼**: .NET 8.0 / Windows Forms / win-x64 | **작성일**: 2026-06-24
 
 ---
 
@@ -129,10 +129,15 @@ Main(args)
   ├─ --uninstall → WatchDogWindowsService.Uninstall() → sc.exe stop/delete
   ├─ !UserInteractive → ServiceBase.Run(WatchDogWindowsService)
   └─ UserInteractive (감시프로그램)
+       ├─ 단일 인스턴스 가드 (Global 뮤텍스) → 이미 실행 중이면 안내 후 종료
        ├─ ConfigManager.IsFirstRun() → SettingsForm (초기 설정)
        ├─ WatchDogEngine.Start()
        └─ Application.Run(TrayApplicationContext)
 ```
+
+> 단일 인스턴스: `Global\InterfaceWatchDog.Tray.SingleInstance` 명명 뮤텍스로 서버 전체 1개만
+> 허용한다. 트레이 앱 모드에만 적용되며 서비스 모드는 위에서 분기되어 영향받지 않는다
+> (서비스 1개 + 트레이 앱 1개 동시 구동은 그대로 유지).
 
 ### 4.2 감시 흐름 (`WatchDogEngine`)
 
@@ -149,11 +154,20 @@ Main(args)
 ```
 CheckErwekaProgram():
   프로세스 미설정 → Disabled
-  프로세스 실행 중 + 포트 OK → Healthy (알람 플래그 리셋)
-  프로세스 미감지 또는 포트 실패 → Failed + 알람 기록 (1회)
+  프로세스 실행 중 + 포트 OK → Healthy (알람/연속 미감지 카운터 리셋)
+  프로세스 미감지 또는 포트 실패:
+    ├─ _erwekaConsecutiveMisses++ (연속 미감지 누적)
+    ├─ 상태는 즉시 Failed 반영 (UI)
+    ├─ 비대화형(서비스) 인스턴스 → 기록 안 함 (중복 방지) 후 종료
+    ├─ FailureGraceCount 미만 → 알람 보류, 추적 로그만 ("확인 중 (n/N)")
+    └─ FailureGraceCount 도달 → 알람 기록 (1회) + SYS_ALARM
 ```
 
-ERWEKA는 **자동 재시작 없음** — Java 기반 프로그램이라 Session 0에서 재시작해도 무용지물.
+- **디바운스**: `ErwekaConfig.FailureGraceCount`(기본 2, 1=즉시) 회 **연속** 미감지 시에만
+  알람. 중간에 한 번이라도 Healthy면 카운터 리셋 → 일시적 WMI 오탐으로 인한 거짓 알람 방지.
+- **기록 전담**: 알람/로그/SYS_ALARM 기록은 **대화형 인스턴스(`_isInteractiveSession`)만**
+  수행 → 트레이 앱·서비스가 동시 구동돼도 중복 기록되지 않음.
+- ERWEKA는 **자동 재시작 없음** — Java 기반 프로그램이라 Session 0에서 재시작해도 무용지물.
 
 ### 4.4 TabmachineIF 재시작 상태 머신
 
@@ -177,6 +191,9 @@ CheckProgram():
 
 - `_erwekaAlarmSent` / `_tabAlarmSent` volatile 플래그로 상태 전환 시에만 알람 발송
 - 프로세스가 복구(Healthy)되면 플래그 리셋 → 재장애 시 새 알람 발송 가능
+- ERWEKA는 `FailureGraceCount` 디바운스(연속 미감지 카운터 `_erwekaConsecutiveMisses`)로
+  그레이스 도달 후에만 발송, 미만이면 알람 보류
+- 기록은 대화형 인스턴스 전담 → 서비스와 동시 구동 시 중복 기록 방지
 
 ### 4.6 설정 핫리로드 (Windows 서비스)
 
@@ -465,3 +482,4 @@ sc query InterfaceWatchDog
 | v1.2.0 | config/dbconfig 분리, PDF 감시 활성화 플래그, UI 개선 |
 | v1.2.1 | TabmachineIF 재시작 실패 시 SYS_ALARM 기록 추가 |
 | v1.3.0 | 트레이 아이콘 방패 형태 개선, 기본 사용법 PPT 추가 |
+| v1.4.0 | ERWEKA WMI 오탐 수정, 미감지 디바운스(`FailureGraceCount`), LOG 중복 알람 제거, 트레이앱 중복 실행 방지(단일 인스턴스) |

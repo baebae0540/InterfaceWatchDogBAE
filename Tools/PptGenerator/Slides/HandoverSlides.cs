@@ -36,15 +36,15 @@ public static class HandoverSlides
         tree.Append(SlideBuilder.CreateTextBox(
             SlideBuilder.EmuCm * 4, SlideBuilder.EmuCm * 12,
             SlideBuilder.EmuCm * 26, SlideBuilder.EmuCm * 2,
-            "ERWEKA / TabmachineIF 인터페이스 감시 시스템  |  v1.3.0",
+            "ERWEKA / TabmachineIF 인터페이스 감시 시스템  |  v1.4.0",
             fontSize: 1600, fontColor: "6B7280",
             anchor: D.TextAnchoringTypeValues.Top));
 
         SlideBuilder.AddNotes(slide, """
             이 프로그램은 공장에서 사용하는 두 가지 인터페이스 프로그램이 정상적으로 동작하는지 감시하는 프로그램입니다.
 
-            ERWEKA Export Manager: ERWEKA라는 제약 장비에서 측정 데이터를 내보내는 Java 기반 프로그램입니다.
-            TabmachineIF: 타정기(정제를 만드는 기계)와 MES(생산관리시스템)를 연결하는 인터페이스 프로그램입니다.
+            ERWEKA Export Manager: 장비에서 측정 데이터를 내보내는 Java 기반 프로그램입니다.
+            TabmachineIF: ERWEKA에서 전달받은 PDF 파일을 처리하는 인터페이스 프로그램입니다.
 
             이 두 프로그램이 갑자기 꺼지면 생산 데이터가 유실될 수 있기 때문에,
             InterfaceWatchDog가 주기적으로 확인하고 문제가 생기면 자동으로 재시작하거나 알람을 보냅니다.
@@ -507,9 +507,7 @@ public static class HandoverSlides
             fontSize: 1400, fontColor: "2563EB", bold: true));
 
         SlideBuilder.AddNotes(slide, """
-            운영 중 가장 자주 보게 될 정보입니다.
-
-            [주요 경로 — 외우세요!]
+            [주요 경로]
             설정 파일: C:\ProgramData\InterfaceWatchDog\ 아래의 config.json, dbconfig.json
             로그 파일: 같은 경로의 Logs 폴더에 날짜별로 생성됩니다 (watchdog_2026-06-22.log 형식)
             설치 경로: C:\Program Files\InterfaceWatchDog\ (exe 파일 위치)

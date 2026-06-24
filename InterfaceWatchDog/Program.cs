@@ -1,4 +1,5 @@
 using System.ServiceProcess;
+using System.Threading;
 using InterfaceWatchDog.Core;
 using InterfaceWatchDog.Core.Actions;
 using InterfaceWatchDog.Service;
@@ -9,6 +10,8 @@ namespace InterfaceWatchDog;
 
 static class Program
 {
+    private static Mutex? _singleInstanceMutex;   // 앱 수명 동안 GC 방지
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -28,6 +31,14 @@ static class Program
         if (!Environment.UserInteractive)
         {
             ServiceBase.Run(new WatchDogWindowsService());
+            return;
+        }
+
+        // ── 단일 인스턴스 보장 (서버 전체 1개) ────────────────────────────────
+        if (!TryAcquireSingleInstance())
+        {
+            MessageBox.Show("InterfaceWatchDog가 이미 실행 중입니다.",
+                "InterfaceWatchDog", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -60,5 +71,22 @@ static class Program
         engine.Start();
 
         Application.Run(new TrayApplicationContext(engine, log, config));
+    }
+
+    // Global 뮤텍스로 서버 전체 단일 인스턴스 보장.
+    // 신규 생성 성공 = 첫 실행(true). 이미 존재하거나(다른 세션 보유로) 접근 거부면 = 이미 실행 중(false).
+    static bool TryAcquireSingleInstance()
+    {
+        const string name = @"Global\InterfaceWatchDog.Tray.SingleInstance";
+        try
+        {
+            _singleInstanceMutex = new Mutex(initiallyOwned: true, name, out bool createdNew);
+            return createdNew;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // 다른 사용자 세션이 이미 뮤텍스를 보유 → 접근 거부를 '이미 실행 중'으로 간주
+            return false;
+        }
     }
 }

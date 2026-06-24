@@ -38,7 +38,7 @@ public static class CommonSlides
         tree.Append(SlideBuilder.CreateTextBox(
             SlideBuilder.EmuCm * 4, SlideBuilder.EmuCm * 12,
             SlideBuilder.EmuCm * 26, SlideBuilder.EmuCm * 2,
-            "ERWEKA / TabmachineIF 인터페이스 감시 시스템  |  v1.3.0",
+            "ERWEKA / TabmachineIF 인터페이스 감시 시스템  |  v1.4.0",
             fontSize: 1600, fontColor: "6B7280",
             anchor: D.TextAnchoringTypeValues.Top));
     }

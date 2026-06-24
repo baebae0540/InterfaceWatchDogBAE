@@ -7,7 +7,7 @@
 #define MyAppName       "InterfaceWatchDog"
 #define MyAppNameKor    "인터페이스 감시 시스템"
 #ifndef MyAppVersion
-  #define MyAppVersion  "1.3.0"
+  #define MyAppVersion  "1.4.0"
 #endif
 #define MyAppPublisher  "InterfaceWatchDog"
 #define MyAppExeName    "InterfaceWatchDog.exe"
