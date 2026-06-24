@@ -27,16 +27,21 @@ internal static class ProcessMatcher
         if (!string.IsNullOrWhiteSpace(commandLineContains))
         {
             var commandLines = GetCommandLines(processName);
-            candidates = candidates.Where(p =>
-                commandLines.TryGetValue(p.Id, out var cmd) &&
-                cmd.Contains(commandLineContains, StringComparison.OrdinalIgnoreCase));
+            if (commandLines is not null)   // WMI 성공 시에만 명령행 필터 적용
+            {
+                candidates = candidates.Where(p =>
+                    commandLines.TryGetValue(p.Id, out var cmd) &&
+                    cmd.Contains(commandLineContains, StringComparison.OrdinalIgnoreCase));
+            }
+            // WMI 실패(null)면 명령행 필터 생략 — 일시 오류로 인한 '미감지' 오탐 방지
         }
 
         return candidates.ToArray();
     }
 
-    // WMI로 각 프로세스의 전체 명령행(실행 파일 + 인수)을 조회한다.
-    private static Dictionary<int, string> GetCommandLines(string processName)
+    // WMI로 각 프로세스의 전체 명령행을 조회한다.
+    // 성공 시 딕셔너리(없으면 빈 딕셔너리), 실패 시 null — 호출부가 둘을 구분하도록.
+    private static Dictionary<int, string>? GetCommandLines(string processName)
     {
         var result = new Dictionary<int, string>();
 
@@ -53,7 +58,8 @@ internal static class ProcessMatcher
         }
         catch
         {
-            // WMI 조회 실패 시 빈 목록 반환 — commandLineContains 필터는 매칭 없음으로 처리됨
+            // WMI 조회 실패 — null 반환으로 신호 (호출부가 필터 생략 → 오탐 방지)
+            return null;
         }
 
         return result;

@@ -17,6 +17,9 @@ public class ErwekaConfig
     public string Arguments { get; set; } = "";
     public int ProcessCheckSeconds { get; set; } = 30;
     public int Port { get; set; } = 0;
+
+    // 연속 미감지 그레이스 — 이 횟수 이상 연속 미감지 시에만 알람 (1 = 즉시, 디바운스 없음)
+    public int FailureGraceCount { get; set; } = 2;
 }
 
 public class TabmachineConfig

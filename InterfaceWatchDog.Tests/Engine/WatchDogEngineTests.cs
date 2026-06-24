@@ -126,6 +126,8 @@ public class WatchDogEngineTests : IDisposable
            .Returns(Task.FromResult(true));
 
         var engine = CreateEngine(alarmDbConfig: alarmDb);
+        // 디바운스: 그레이스 도달 후 발화
+        engine.CheckProcesses();
         engine.CheckProcesses();
 
         // 비동기 Task.Run으로 실행되므로 약간의 대기
@@ -168,19 +170,21 @@ public class WatchDogEngineTests : IDisposable
         _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
            .Returns(Task.FromResult(true));
 
-        // 처음: 다운
+        // 다운 1차 (그레이스 도달 → 알람)
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
         var engine = CreateEngine(alarmDbConfig: alarmDb);
         engine.CheckProcesses();
+        engine.CheckProcesses();
         Thread.Sleep(200);
 
-        // 복구
+        // 복구 (카운터 리셋)
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
         _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 5555 });
         engine.CheckProcesses();
 
-        // 다시 다운
+        // 다운 2차 (그레이스 도달 → 알람)
         _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        engine.CheckProcesses();
         engine.CheckProcesses();
         Thread.Sleep(200);
 
@@ -224,6 +228,107 @@ public class WatchDogEngineTests : IDisposable
 
         Thread.Sleep(200);
         _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    // ── 4-b. ERWEKA 디바운스(연속 미감지 그레이스) ───────────────────────────
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaDownBelowGrace_ShouldLogPendingButNotAlarm()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+        engine.CheckProcesses();   // 1회만 — 그레이스(2) 미만
+
+        Thread.Sleep(200);
+        // 그레이스 미만: 차별화 문구('확인 중') 추적 로그는 남되 알람/SYS_ALARM은 보류
+        var logs = _log.ReadTodayLogs();
+        logs.Should().Contain(l => l.Source == "TestErweka" && l.Message.Contains("확인 중"));
+        logs.Should().NotContain(l => l.Source == "TestErweka" && l.Message.Contains("알람 기록"));
+        _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public void CheckProcesses_WhenErwekaTransientMissThenRecovers_ShouldNotWriteAlarmOrRecoveryLog()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        // 일시적 1회 미감지 (그레이스 미만)
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+        engine.CheckProcesses();
+
+        // 즉시 복구
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-erweka", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 5555 });
+        engine.CheckProcesses();
+
+        Thread.Sleep(200);
+        _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        // 알람 미발생 → '복구됨' 로그도 없음
+        _log.ReadTodayLogs().Should().NotContain(l => l.Source == "TestErweka" && l.Message.Contains("복구됨"));
+    }
+
+    [Fact]
+    public void CheckProcesses_ErwekaGraceThreshold_IsReadFromConfig()
+    {
+        _config.DbConnectionVerified = true;
+        _config.Erweka.FailureGraceCount = 3;   // 설정값으로 그레이스 상향
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(alarmDbConfig: alarmDb);
+
+        engine.CheckProcesses();   // 1회
+        engine.CheckProcesses();   // 2회 — 설정 그레이스(3) 미만, 미발화
+        Thread.Sleep(200);
+        _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+
+        engine.CheckProcesses();   // 3회 — 그레이스 도달 → 알람 발화
+        Thread.Sleep(200);
+        _aw.Received(1).WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    // ── 4-c. 중복 기록 제거 — 비대화형(서비스) 인스턴스는 알람/로그 미기록 ────────
+
+    [Fact]
+    public void CheckProcesses_WhenNotInteractiveSessionAndErwekaDown_ShouldNotWriteAlarmOrLogs()
+    {
+        _config.DbConnectionVerified = true;
+        var alarmDb = new AlarmDbConfig { Server = "test", Database = "testdb", PlantCode = "P1" };
+        _pm.IsRunning("test-erweka", Arg.Any<string>()).Returns(false);
+        _pm.IsRunning("test-tab", Arg.Any<string>()).Returns(true);
+        _pm.GetProcessInfo("test-tab", Arg.Any<string>()).Returns(new ProcessInfo { Pid = 2002 });
+        _aw.WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+           .Returns(Task.FromResult(true));
+
+        var engine = CreateEngine(isInteractiveSession: false, alarmDbConfig: alarmDb);
+        ProgramStatus? erweka = null;
+        engine.ProgramStatusChanged += s => { if (s.Key == "Erweka") erweka = s; };
+
+        for (int i = 0; i < 5; i++) engine.CheckProcesses();   // 그레이스 충분히 초과
+
+        Thread.Sleep(200);
+        // 서비스 인스턴스는 알람/로그 미기록 (트레이 앱 전담 → 중복 방지)
+        _aw.DidNotReceive().WriteAlarmAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), "test-erweka", Arg.Any<string>());
+        _log.ReadTodayLogs().Should().NotContain(l => l.Source == "TestErweka" && l.Message.Contains("알람 기록"));
+        // 상태는 그대로 Failed
+        erweka!.Status.Should().Be(HealthStatus.Failed);
     }
 
     // ── 5. 파일 활동 경고 이벤트 전파 ────────────────────────────────────────
@@ -551,6 +656,8 @@ public class WatchDogEngineTests : IDisposable
         _pm.IsPortListening(9100).Returns(false);
 
         var engine = CreateEngine();
+        // 디바운스: 그레이스 도달 후 발화
+        engine.CheckProcesses();
         engine.CheckProcesses();
 
         var logs = _log.ReadTodayLogs();

@@ -32,6 +32,9 @@ public class WatchDogEngine : IDisposable
     private volatile bool _erwekaAlarmSent;
     private volatile bool _tabAlarmSent;
 
+    // ERWEKA 연속 미감지 횟수 (디바운스용) — 임계값은 ErwekaConfig.FailureGraceCount
+    private int _erwekaConsecutiveMisses;
+
     public event Action<ProgramStatus>?     ProgramStatusChanged;
     public event Action<FileActivityStatus>? FileStatusChanged;
 
@@ -298,13 +301,15 @@ public class WatchDogEngine : IDisposable
             status.IsRunning     = true;
             status.LastSeenAlive = DateTime.Now;
 
-            if (status.Status != HealthStatus.Healthy)
+            // 알람을 실제 보낸 경우에만, 대화형 인스턴스에서만 복구 로그
+            if (_erwekaAlarmSent && _isInteractiveSession)
                 _log.Info(cfg.DisplayName, "프로세스 정상 감지 (복구됨)");
 
             var portInfo = cfg.Port > 0 ? $", 포트 {cfg.Port} LISTEN" : "";
             UpdateStatus(ref status, HealthStatus.Healthy,
                 $"정상 실행 중 (PID: {_processMonitor.GetProcessInfo(cfg.ProcessName, "", cfg.Arguments)?.Pid}{portInfo})");
             _erwekaAlarmSent = false;
+            _erwekaConsecutiveMisses = 0;
             return;
         }
 
@@ -314,7 +319,25 @@ public class WatchDogEngine : IDisposable
             ? $"포트 {cfg.Port} 응답 없음 (TCP LISTEN 아님)"
             : "프로세스 미감지";
 
-        UpdateStatus(ref status, HealthStatus.Failed, $"{downReason} — 알람 전송됨");
+        _erwekaConsecutiveMisses++;
+        var graceThreshold = Math.Max(1, cfg.FailureGraceCount);
+        var graceReached   = _erwekaConsecutiveMisses >= graceThreshold;
+
+        // 상태는 즉시 Failed로 반영(UI). 기록은 대화형 인스턴스 전담(서비스 중복 방지):
+        //  그레이스 미만이면 추적 로그만(알람 보류), 도달 시 알람+SYS_ALARM 발화.
+        UpdateStatus(ref status, HealthStatus.Failed,
+            graceReached ? $"{downReason} — 알람 전송됨"
+                         : $"{downReason} — 확인 중 ({_erwekaConsecutiveMisses}/{graceThreshold})");
+
+        if (!_isInteractiveSession) return;
+
+        if (!graceReached)
+        {
+            // 그레이스 미만 — 일시 오류일 수 있어 알람은 보류하고 추적 로그만 남긴다
+            _log.Warn(cfg.DisplayName,
+                $"{downReason} — 확인 중 ({_erwekaConsecutiveMisses}/{graceThreshold}), 알람 보류");
+            return;
+        }
 
         if (!_erwekaAlarmSent)
         {
